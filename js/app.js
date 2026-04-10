@@ -30,6 +30,12 @@ const FORMAT_MP3                 = 'mp3-audio-only';
 const AUDIO_BITRATE              = 128_000;
 const VIDEO_BITRATES             = { '480': 2_000_000, '720': 4_000_000, '1080': 8_000_000 };
 const ONE_HOUR_SECONDS           = 60 * 60;
+const LIBRARY_DATE_FORMATTER     = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+});
 const STATUS_CLASS = {
   muted:   'text-muted',
   success: 'text-success',
@@ -273,33 +279,49 @@ function clearSelectedMediaState(message = 'Select a file from the chosen folder
 function buildMediaListItem(entry) {
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'list-group-item list-group-item-action';
+  button.className = 'captura-library-item';
   button.dataset.name = entry.name;
 
+  const iconBox = document.createElement('div');
+  iconBox.className = 'captura-library-thumb';
+  iconBox.innerHTML = `<i class="fas ${entry.kind === 'video' ? 'fa-circle-play' : 'fa-wave-square'}"></i>`;
+
+  const body = document.createElement('div');
+  body.className = 'captura-library-copy';
+
   const top = document.createElement('div');
-  top.className = 'd-flex align-items-center justify-content-between gap-2';
+  top.className = 'd-flex align-items-start justify-content-between gap-2';
 
   const name = document.createElement('span');
-  name.className = 'text-truncate';
+  name.className = 'captura-library-name';
   name.textContent = entry.name;
 
   const badge = document.createElement('span');
-  badge.className = entry.kind === 'video' ? 'badge bg-primary' : 'badge bg-secondary';
-  badge.textContent = entry.kind === 'video' ? 'Video' : 'Audio';
+  badge.className = 'captura-library-kind';
+  badge.textContent = entry.kind === 'video' ? 'VIDEO' : 'AUDIO';
 
   top.append(name, badge);
 
   const bottom = document.createElement('div');
-  bottom.className = 'd-flex align-items-center justify-content-between gap-2 mt-1';
+  bottom.className = 'captura-library-meta';
+
+  const dateLabel = document.createElement('span');
+  dateLabel.textContent = entry.lastModified
+    ? LIBRARY_DATE_FORMATTER.format(entry.lastModified)
+    : 'No date';
+
+  const sizeLabel = document.createElement('span');
+  sizeLabel.textContent = fmtBytes(entry.size);
 
   const transcriptLabel = document.createElement('small');
-  transcriptLabel.className = 'text-muted';
+  transcriptLabel.className = 'captura-library-transcripts';
   transcriptLabel.textContent = entry.transcriptCount
     ? `${entry.transcriptCount} transcript${entry.transcriptCount === 1 ? '' : 's'}`
     : 'No transcript yet';
 
-  bottom.append(transcriptLabel);
-  button.append(top, bottom);
+  bottom.append(dateLabel, document.createTextNode(' • '), sizeLabel);
+  body.append(top, bottom, transcriptLabel);
+  button.append(iconBox, body);
   return button;
 }
 
@@ -308,7 +330,7 @@ function renderMediaFileList() {
 
   if (!libraryEntries.length) {
     const empty = document.createElement('div');
-    empty.className = 'list-group-item text-muted small';
+    empty.className = 'captura-library-empty';
     empty.textContent = storage.dirHandle
       ? 'No supported audio or video files were found in the selected folder root.'
       : 'Choose a folder to list its audio and video files.';

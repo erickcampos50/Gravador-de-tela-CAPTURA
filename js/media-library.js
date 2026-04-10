@@ -56,9 +56,12 @@ export class MediaLibrary {
       entries
         .filter(entry => isMediaFileName(entry.name))
         .map(async entry => {
+          const file = await entry.handle.getFile();
           const related = transcriptEntries.filter(candidate => isTranscriptNameFor(entry.name, candidate.name));
           return {
             ...entry,
+            size: file.size || 0,
+            lastModified: file.lastModified || 0,
             kind: isVideoFileName(entry.name) ? 'video' : 'audio',
             transcriptCount: related.length,
           };

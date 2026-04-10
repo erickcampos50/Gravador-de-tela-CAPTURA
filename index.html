@@ -10,10 +10,13 @@
   <link rel="manifest" href="./manifest.json">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./styles/styles.css">
   <link rel="stylesheet" href="./recorder.css">
 </head>
-<body class="bg-dark">
+<body class="captura-body">
 
 <div id="pwa-update-bar" class="d-flex align-items-center gap-2" hidden>
   <span><i class="fas fa-sync-alt me-1"></i>A new version of Captura is available!</span>
@@ -33,297 +36,359 @@
   </div>
 </dialog>
 
-<header id="tool-header" class="py-4 bg-info text-white google-anno-skip">
-  <div class="container">
-    <h2 class="mb-1">Captura Web Recorder</h2>
-    <p class="mb-0">Standalone local build for screen recording, webcam overlay, and audio mixing.</p>
-  </div>
-</header>
+<main class="captura-shell">
+  <aside class="captura-sidebar google-anno-skip">
+    <div class="captura-brand">
+      <div class="captura-brand-mark">
+        <i class="fas fa-sliders-h"></i>
+      </div>
+      <div>
+        <div class="captura-brand-title">ARCHIVE</div>
+        <div class="captura-brand-subtitle">PRO STUDIO</div>
+      </div>
+    </div>
 
-<main class="container py-4">
-  <div class="row justify-content-center">
-    <div id="tool-main-content" class="col-12 col-xl-10">
+    <nav class="captura-nav">
+      <a class="captura-nav-link is-active" href="#recorder-ui">
+        <i class="fas fa-border-all"></i>
+        <span>Dashboard</span>
+      </a>
+      <a class="captura-nav-link" href="#captura-library-card">
+        <i class="fas fa-photo-film"></i>
+        <span>Media Library</span>
+      </a>
+      <a class="captura-nav-link" href="#captura-engine-card">
+        <i class="fas fa-file-lines"></i>
+        <span>Transcripts</span>
+      </a>
+      <a class="captura-nav-link" href="#transcription-settings-panel">
+        <i class="fas fa-bolt"></i>
+        <span>Automation</span>
+      </a>
+      <a class="captura-nav-link" href="#openai-panel">
+        <i class="fas fa-gear"></i>
+        <span>Settings</span>
+      </a>
+    </nav>
 
-<!-- ── Recorder ──────────────────────────────────────────────────────────── -->
-<div id="recorder-ui" class="card mb-4 google-anno-skip">
-  <div class="card-body">
+    <div class="captura-sidebar-footer">
+      <a class="captura-sidebar-cta" href="#recorder-ui">
+        <i class="fas fa-plus-circle"></i>
+        <span>New Recording</span>
+      </a>
+      <a class="captura-sidebar-help" href="#captura-about">
+        <i class="far fa-circle-question"></i>
+        <span>Help Center</span>
+      </a>
+    </div>
+  </aside>
 
-    <div class="row g-4">
-
-      <!-- Left: canvas preview -->
-      <div class="col-lg-8">
-        <div class="mb-2 d-flex align-items-center justify-content-between">
-          <span class="fw-semibold">Preview</span>
-          <span class="d-flex align-items-center gap-2">
+  <div id="tool-main-content" class="captura-workspace">
+    <div class="captura-workspace-grid google-anno-skip">
+      <section class="captura-main-column">
+        <div class="captura-session-header">
+          <div>
+            <p class="captura-panel-kicker mb-2">Capture Workspace</p>
+            <h1 class="captura-page-title">Live Session</h1>
+            <p class="captura-page-subtitle mb-0">Configure your inputs and start capturing high-fidelity media.</p>
+          </div>
+          <div class="captura-session-meta">
             <span id="status-badge" class="badge bg-secondary">Idle</span>
-            <span id="timer-text" class="font-monospace text-muted small">00:00</span>
-          </span>
-        </div>
-        <canvas id="recorder-canvas" width="1280" height="720"></canvas>
-        <div class="mt-2 d-flex align-items-center justify-content-between gap-2 flex-wrap">
-          <span id="recording-estimate" class="text-muted small">1h estimate: 1.77 GB</span>
-          <span id="format-hint" class="text-muted small"></span>
-        </div>
-        <div class="mt-3 d-flex gap-2 flex-wrap">
-          <button id="start-btn" class="btn btn-info text-white">
-            <i class="fas fa-circle me-1"></i>Start Recording
-          </button>
-          <button id="pause-btn" class="btn btn-warning text-dark" hidden>
-            <i class="fas fa-pause me-1"></i>Pause
-          </button>
-          <button id="stop-btn" class="btn btn-danger" hidden>
-            <i class="fas fa-stop me-1"></i>Stop
-          </button>
-          <button id="mic-toggle-btn" class="btn btn-outline-light" hidden>
-            <i class="fas fa-microphone-slash me-1"></i>Mute Mic
-          </button>
-          <button id="end-session-btn" class="btn btn-outline-warning" hidden>
-            <i class="fas fa-times-circle me-1"></i>End Session
-          </button>
+            <span id="timer-text" class="captura-timer-pill">00:00</span>
+          </div>
         </div>
 
-        <!-- Save location -->
-        <div class="mt-3 d-flex align-items-center gap-2">
-          <span id="dir-name" class="text-muted small flex-grow-1 text-truncate">(no folder selected)</span>
-          <button id="pick-dir-btn" class="btn btn-sm btn-outline-secondary flex-shrink-0">
-            <i class="fas fa-folder-open me-1"></i>Choose Folder
-          </button>
-        </div>
+        <section id="recorder-ui" class="captura-live-panel">
+          <div class="captura-stage-card">
+            <div class="captura-stage-head">
+              <div>
+                <p class="captura-panel-kicker mb-1">Live Preview</p>
+                <p id="recording-estimate" class="captura-stage-support mb-0">1h estimate: 1.77 GB</p>
+              </div>
+              <div class="captura-stage-actions">
+                <span id="format-hint" class="captura-stage-support"></span>
+                <button type="button" class="captura-stage-expand" aria-label="Preview focus">
+                  <i class="fas fa-expand"></i>
+                </button>
+              </div>
+            </div>
 
-        <!-- Audio Mix -->
-        <div class="mt-3">
-          <h6 class="mb-2">Audio Mix</h6>
+            <div class="captura-stage-frame">
+              <canvas id="recorder-canvas" width="1280" height="720"></canvas>
+              <div class="captura-stage-play">
+                <i class="fas fa-play"></i>
+              </div>
+            </div>
 
-          <div class="mb-2">
-            <div class="d-flex align-items-center justify-content-between mb-1">
-              <label class="form-label text-muted small mb-0" for="mic-gain-slider">
-                <i class="fas fa-microphone me-1"></i>Mic level
+            <div id="long-recording-alert" class="captura-stage-alert" hidden></div>
+          </div>
+
+          <div class="captura-config-grid">
+            <section class="captura-control-card">
+              <div class="captura-card-title">
+                <i class="fas fa-sliders-h"></i>
+                <span>Source Controls</span>
+              </div>
+
+              <label class="captura-field" for="webcam-select">
+                <span class="captura-field-label">
+                  <i class="fas fa-video"></i>
+                  Webcam Overlay
+                </span>
+                <select id="webcam-select" class="form-select form-select-sm">
+                  <option value="">None</option>
+                </select>
               </label>
-              <span id="mic-gain-label" class="text-muted small font-monospace">100%</span>
-            </div>
-            <input type="range" class="form-range" id="mic-gain-slider" min="0" max="2" step="0.01" value="1">
-            <canvas id="mic-level-canvas" class="audio-meter mt-1" width="200" height="10"></canvas>
-          </div>
 
-          <div class="mb-2">
-            <div class="d-flex align-items-center justify-content-between mb-1">
-              <label class="form-label text-muted small mb-0" for="sys-gain-slider">
-                <i class="fas fa-desktop me-1"></i>System level
+              <label class="captura-field" for="mic-select">
+                <span class="captura-field-label">
+                  <i class="fas fa-microphone"></i>
+                  Primary Microphone
+                </span>
+                <select id="mic-select" class="form-select form-select-sm">
+                  <option value="">None</option>
+                </select>
               </label>
-              <span id="sys-gain-label" class="text-muted small font-monospace">100%</span>
-            </div>
-            <input type="range" class="form-range" id="sys-gain-slider" min="0" max="2" step="0.01" value="1">
-            <canvas id="sys-level-canvas" class="audio-meter mt-1" width="200" height="10"></canvas>
+
+              <label class="captura-toggle-row" for="sys-audio-chk">
+                <span class="captura-field-label">
+                  <i class="fas fa-wave-square"></i>
+                  Capture System Audio
+                </span>
+                <span class="form-check form-switch m-0">
+                  <input class="form-check-input" type="checkbox" id="sys-audio-chk" checked>
+                </span>
+              </label>
+            </section>
+
+            <section class="captura-control-card">
+              <div class="captura-card-title">
+                <i class="fas fa-chart-simple"></i>
+                <span>Audio Mixer</span>
+              </div>
+
+              <div class="captura-slider-block">
+                <div class="d-flex align-items-center justify-content-between mb-1">
+                  <label class="captura-field-label mb-0" for="sys-gain-slider">System Audio</label>
+                  <span id="sys-gain-label" class="captura-decibel-pill">100%</span>
+                </div>
+                <input type="range" class="form-range" id="sys-gain-slider" min="0" max="2" step="0.01" value="1">
+                <canvas id="sys-level-canvas" class="audio-meter mt-1" width="200" height="10"></canvas>
+              </div>
+
+              <div class="captura-slider-block">
+                <div class="d-flex align-items-center justify-content-between mb-1">
+                  <label class="captura-field-label mb-0" for="mic-gain-slider">Mic Input</label>
+                  <span id="mic-gain-label" class="captura-decibel-pill">100%</span>
+                </div>
+                <input type="range" class="form-range" id="mic-gain-slider" min="0" max="2" step="0.01" value="1">
+                <canvas id="mic-level-canvas" class="audio-meter mt-1" width="200" height="10"></canvas>
+              </div>
+
+              <div class="captura-advanced-grid">
+                <label class="captura-compact-field" for="fps-select">
+                  <span>Frame Rate</span>
+                  <select id="fps-select" class="form-select form-select-sm">
+                    <option value="15">15 fps</option>
+                    <option value="30" selected>30 fps</option>
+                    <option value="60">60 fps</option>
+                  </select>
+                </label>
+                <label class="captura-compact-field" for="quality-select">
+                  <span>Quality</span>
+                  <select id="quality-select" class="form-select form-select-sm">
+                    <option value="480">480p</option>
+                    <option value="720" selected>720p</option>
+                    <option value="1080">1080p</option>
+                  </select>
+                </label>
+                <label class="captura-compact-field captura-compact-field-wide" for="format-select">
+                  <span>Format</span>
+                  <select id="format-select" class="form-select form-select-sm">
+                    <option value="webm-vp9-opus" selected>WebM - VP9 + Opus</option>
+                    <option value="mp4-h264-aac">MP4 - H.264 + AAC</option>
+                    <option value="mp3-audio-only">MP3 - audio only</option>
+                  </select>
+                </label>
+              </div>
+            </section>
           </div>
-        </div>
 
-      </div>
+          <div class="captura-record-actions">
+            <button id="start-btn" class="captura-record-button">
+              <i class="fas fa-circle"></i>
+              <span>Start Recording</span>
+            </button>
 
-      <!-- Right: settings -->
-      <div class="col-lg-4">
-
-        <!-- Audio / Video sources -->
-        <h6 class="mb-3">Sources</h6>
-
-        <div class="mb-3">
-          <label class="form-label text-muted small mb-1" for="webcam-select">
-            <i class="fas fa-video me-1"></i>Webcam overlay
-          </label>
-          <select id="webcam-select" class="form-select form-select-sm">
-            <option value="">None</option>
-          </select>
-        </div>
-
-        <div class="mb-3">
-          <label class="form-label text-muted small mb-1" for="mic-select">
-            <i class="fas fa-microphone me-1"></i>Microphone
-          </label>
-          <select id="mic-select" class="form-select form-select-sm">
-            <option value="">None</option>
-          </select>
-        </div>
-
-        <div class="mb-3 form-check form-switch">
-          <input class="form-check-input" type="checkbox" id="sys-audio-chk" checked>
-          <label class="form-check-label small" for="sys-audio-chk">Capture system audio</label>
-        </div>
-
-        <hr>
-
-        <!-- Quality -->
-        <h6 class="mb-3">Quality</h6>
-
-        <div class="mb-3">
-          <label class="form-label text-muted small mb-1" for="fps-select">Frame rate</label>
-          <select id="fps-select" class="form-select form-select-sm">
-            <option value="15">15 fps</option>
-            <option value="30" selected>30 fps</option>
-            <option value="60">60 fps</option>
-          </select>
-        </div>
-
-        <div class="mb-3">
-          <label class="form-label text-muted small mb-1" for="quality-select">Quality preset</label>
-          <select id="quality-select" class="form-select form-select-sm">
-            <option value="480">480p — ~2 Mbps</option>
-            <option value="720" selected>720p — ~4 Mbps</option>
-            <option value="1080">1080p — ~8 Mbps</option>
-          </select>
-        </div>
-
-        <div class="mb-3">
-          <label class="form-label text-muted small mb-1" for="format-select">Recording format</label>
-          <select id="format-select" class="form-select form-select-sm">
-            <option value="webm-vp9-opus" selected>WebM — VP9 + Opus</option>
-            <option value="mp4-h264-aac">MP4 — H.264 + AAC</option>
-            <option value="mp3-audio-only">MP3 — audio only</option>
-          </select>
-        </div>
-
-        <div id="long-recording-alert" class="alert alert-warning py-2 small mb-0" hidden></div>
-
-      </div>
-    </div><!-- /.row -->
-
-  </div><!-- /.card-body -->
-</div><!-- /.card -->
-
-<div id="transcription-ui" class="card mb-4 google-anno-skip">
-  <div class="card-body">
-    <div class="row g-4">
-      <div class="col-lg-4">
-        <details id="openai-panel" class="captura-details">
-          <summary class="fw-semibold">OpenAI Key</summary>
-          <form id="openai-key-form" class="mt-3" autocomplete="on">
-            <input type="text" name="username" value="Captura OpenAI" autocomplete="username" hidden>
-            <label class="form-label text-muted small mb-1" for="openai-api-key">API key</label>
-            <div class="input-group input-group-sm">
-              <input
-                id="openai-api-key"
-                name="password"
-                type="password"
-                class="form-control"
-                autocomplete="current-password"
-                placeholder="sk-..."
-                spellcheck="false"
-              >
-              <button id="openai-api-key-toggle" type="button" class="btn btn-outline-secondary">Show</button>
+            <div class="captura-secondary-actions">
+              <button id="pause-btn" class="btn btn-warning text-dark" hidden>
+                <i class="fas fa-pause me-1"></i>Pause
+              </button>
+              <button id="stop-btn" class="btn btn-danger" hidden>
+                <i class="fas fa-stop me-1"></i>Stop
+              </button>
+              <button id="mic-toggle-btn" class="btn btn-outline-light" hidden>
+                <i class="fas fa-microphone-slash me-1"></i>Mute Mic
+              </button>
+              <button id="end-session-btn" class="btn btn-outline-warning" hidden>
+                <i class="fas fa-times-circle me-1"></i>End Session
+              </button>
             </div>
-            <p class="text-muted small mb-0 mt-2">
-              The key stays only in this browser session. Chrome can optionally remember it through its password manager. When you run a transcription, the selected audio is sent directly from this browser to the OpenAI API.
-            </p>
-          </form>
-        </details>
-
-        <details id="transcription-settings-panel" class="captura-details mt-3">
-          <summary class="fw-semibold">Transcription Settings</summary>
-          <div class="mt-3">
-            <div class="form-check form-switch mb-3">
-              <input class="form-check-input" type="checkbox" id="live-transcription-chk">
-              <label class="form-check-label small" for="live-transcription-chk">Enable live transcription while recording</label>
-            </div>
-
-            <label class="form-label text-muted small mb-1" for="transcription-prompt">
-              Optional prompt for better transcript quality
-            </label>
-            <textarea
-              id="transcription-prompt"
-              class="form-control form-control-sm"
-              rows="7"
-              placeholder="Use context, preferred spellings, acronyms, punctuation style, filler words, or the expected topic."
-            ></textarea>
-            <p class="text-muted small mt-2 mb-0">
-              The last prompt is saved locally and reused for live updates, saved recordings, and selected files.
-            </p>
           </div>
-        </details>
+        </section>
+      </section>
 
-        <div class="mt-3">
-          <div class="d-flex align-items-center justify-content-between mb-2">
-            <h6 class="mb-0">Live Transcript</h6>
+      <aside id="transcription-ui" class="captura-side-column">
+        <section class="captura-side-card captura-storage-card">
+          <div class="captura-side-heading">
+            <div>
+              <p class="captura-panel-kicker mb-1">Storage Location</p>
+              <p class="captura-side-subtitle mb-0">Select the folder used for recordings and transcript files.</p>
+            </div>
+          </div>
+
+          <div class="captura-storage-row">
+            <div class="captura-storage-name">
+              <i class="fas fa-folder"></i>
+              <span id="dir-name" class="text-truncate">(no folder selected)</span>
+            </div>
+            <button id="pick-dir-btn" class="captura-icon-button" type="button" aria-label="Choose folder">
+              <i class="fas fa-pen"></i>
+            </button>
+          </div>
+        </section>
+
+        <section id="captura-library-card" class="captura-side-card captura-library-card">
+          <div class="captura-side-heading">
+            <div>
+              <p class="captura-panel-kicker mb-1">Folder History</p>
+              <p id="library-summary" class="captura-side-subtitle mb-0">Select a folder to browse audio and video files.</p>
+            </div>
+            <button id="refresh-library-btn" class="captura-refresh-pill" type="button">
+              Refresh
+            </button>
+          </div>
+
+          <div class="captura-selected-preview">
+            <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+              <span id="selected-media-label" class="captura-selected-name text-truncate">No file selected</span>
+              <span id="selected-media-kind" class="badge bg-secondary">Idle</span>
+            </div>
+
+            <video id="selected-video-player" class="w-100" controls hidden></video>
+            <audio id="selected-audio-player" class="w-100" controls hidden></audio>
+            <div id="media-preview-placeholder" class="captura-preview-placeholder text-muted small">
+              Select a file from the chosen folder to preview it and inspect the related transcript.
+            </div>
+          </div>
+
+          <div id="media-file-list" class="captura-file-list" aria-label="Media files in selected folder"></div>
+        </section>
+
+        <section id="captura-engine-card" class="captura-side-card captura-engine-card">
+          <div class="captura-side-heading align-items-start">
+            <div>
+              <p class="captura-panel-kicker mb-1">AI Transcription Engine</p>
+              <div id="transcription-status" class="captura-inline-status small text-muted">No transcription running.</div>
+            </div>
             <span id="live-transcript-badge" class="badge bg-secondary">Inactive</span>
           </div>
-          <div id="transcription-status" class="captura-inline-status text-muted small mb-2">No transcription running.</div>
-          <textarea
-            id="live-transcript-output"
-            class="form-control form-control-sm capturatranscript-textarea"
-            rows="12"
-            readonly
-            placeholder="Live transcript updates will appear here during recording."
-          ></textarea>
-        </div>
-      </div>
 
-      <div class="col-lg-8">
-        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
-          <div>
-            <h6 class="mb-1">Files In Chosen Folder</h6>
-            <p id="library-summary" class="text-muted small mb-0">Select a folder to browse audio and video files.</p>
+          <details id="openai-panel" class="captura-details">
+            <summary>OpenAI API Key</summary>
+            <form id="openai-key-form" class="mt-3" autocomplete="on">
+              <input type="text" name="username" value="Captura OpenAI" autocomplete="username" hidden>
+              <div class="input-group input-group-sm">
+                <input
+                  id="openai-api-key"
+                  name="password"
+                  type="password"
+                  class="form-control"
+                  autocomplete="current-password"
+                  placeholder="sk-..."
+                  spellcheck="false"
+                >
+                <button id="openai-api-key-toggle" type="button" class="btn btn-outline-secondary">Show</button>
+              </div>
+              <p class="captura-side-note mb-0 mt-2">
+                The key stays in this browser session. Chrome can remember it through its password manager.
+              </p>
+            </form>
+          </details>
+
+          <details id="transcription-settings-panel" class="captura-details">
+            <summary>Prompt and Live Controls</summary>
+            <div class="mt-3">
+              <label class="captura-toggle-row mb-3" for="live-transcription-chk">
+                <span class="captura-field-label">
+                  <i class="fas fa-wave-square"></i>
+                  Enable Live Transcript
+                </span>
+                <span class="form-check form-switch m-0">
+                  <input class="form-check-input" type="checkbox" id="live-transcription-chk">
+                </span>
+              </label>
+
+              <label class="captura-field" for="transcription-prompt">
+                <span class="captura-field-label">Custom Prompt</span>
+                <textarea
+                  id="transcription-prompt"
+                  class="form-control form-control-sm"
+                  rows="5"
+                  placeholder="Summarize the main architectural decisions, preserve acronyms, and keep speaker filler words when useful."
+                ></textarea>
+              </label>
+            </div>
+          </details>
+
+          <div class="captura-engine-actions">
+            <button id="transcribe-selected-btn" class="captura-engine-button" disabled>
+              <i class="fas fa-file-waveform"></i>
+              <span>Generate Transcript</span>
+            </button>
+            <button id="transcribe-new-version-btn" class="captura-engine-secondary" disabled>
+              <i class="fas fa-copy"></i>
+              <span>New Version</span>
+            </button>
           </div>
-          <button id="refresh-library-btn" class="btn btn-sm btn-outline-secondary">
-            <i class="fas fa-rotate-right me-1"></i>Refresh File List
-          </button>
-        </div>
 
-        <div class="row g-3">
-          <div class="col-md-4">
-            <div id="media-file-list" class="list-group captura-file-list" aria-label="Media files in selected folder"></div>
+          <label class="captura-field" for="transcript-version-select">
+            <span class="captura-field-label">Transcript Version</span>
+            <select id="transcript-version-select" class="form-select form-select-sm" disabled>
+              <option value="">No transcript yet</option>
+            </select>
+          </label>
+
+          <div id="selected-transcript-status" class="captura-inline-status small text-muted">
+            Pick a file to load its transcript.
           </div>
 
-          <div class="col-md-8">
-            <div class="captura-preview-shell mb-3">
-              <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
-                <span id="selected-media-label" class="fw-semibold text-truncate">No file selected</span>
-                <span id="selected-media-kind" class="badge bg-secondary">Idle</span>
-              </div>
-
-              <video id="selected-video-player" class="w-100" controls hidden></video>
-              <audio id="selected-audio-player" class="w-100" controls hidden></audio>
-              <div id="media-preview-placeholder" class="captura-preview-placeholder text-muted small">
-                Select a file from the chosen folder to preview it and inspect the related transcript.
-              </div>
-            </div>
-
-            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
-              <h6 class="mb-0">Related Transcript</h6>
-              <div class="d-flex gap-2 flex-wrap">
-                <button id="transcribe-selected-btn" class="btn btn-sm btn-info text-white" disabled>
-                  <i class="fas fa-wave-square me-1"></i>Transcribe Selected File
-                </button>
-                <button id="transcribe-new-version-btn" class="btn btn-sm btn-outline-info" disabled>
-                  <i class="fas fa-copy me-1"></i>Generate New Version
-                </button>
-              </div>
-            </div>
-
-            <div class="row g-2 align-items-end mb-2">
-              <div class="col-sm-6">
-                <label class="form-label text-muted small mb-1" for="transcript-version-select">Transcript version</label>
-                <select id="transcript-version-select" class="form-select form-select-sm" disabled>
-                  <option value="">No transcript yet</option>
-                </select>
-              </div>
-              <div class="col-sm-6">
-                <div id="selected-transcript-status" class="captura-inline-status text-muted small">
-                  Pick a file to load its transcript.
-                </div>
-              </div>
-            </div>
-
+          <label class="captura-field" for="transcript-viewer">
+            <span class="captura-field-label">Transcript Viewer</span>
             <textarea
               id="transcript-viewer"
               class="form-control form-control-sm capturatranscript-textarea"
-              rows="14"
+              rows="9"
               readonly
               placeholder="The selected transcript will be displayed here."
             ></textarea>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
+          </label>
 
+          <label class="captura-field" for="live-transcript-output">
+            <span class="captura-field-label">Live Transcript Output</span>
+            <textarea
+              id="live-transcript-output"
+              class="form-control form-control-sm capturatranscript-textarea"
+              rows="8"
+              readonly
+              placeholder="Live transcript updates will appear here during recording."
+            ></textarea>
+          </label>
+        </section>
+      </aside>
+    </div>
+
+    <div class="captura-docs-stack">
 <!-- ── About ─────────────────────────────────────────────────────────────── -->
 <div id="captura-about" class="card google-anno-skip">
   <div class="card-body">
@@ -561,10 +626,9 @@
     </p>
   </div>
 </div>
-
+    </div>
 
     </div>
-  </div>
 </main>
 
 <script src="./scripts/formatting.js"></script>
