@@ -10,8 +10,10 @@ Aplicação web estática para gravação de tela, áudio e webcam com salvament
 - Lista os arquivos de áudio e vídeo da pasta selecionada.
 - Permite reproduzir o arquivo selecionado e visualizar suas transcrições relacionadas.
 - Gera transcrição do arquivo selecionado.
+- Gera transcrição com timestamps por segmento ou diarização com speaker labels em texto legível.
 - Gera transcrição em tempo real durante a gravação.
 - Salva o transcript ao vivo e a transcrição final ao lado do arquivo original.
+- Permite copiar ou salvar o resultado reformulado da transcrição.
 - Divide arquivos grandes automaticamente antes de enviar para a API da OpenAI.
 
 ## Requisitos
@@ -53,9 +55,14 @@ http://localhost:4173
 1. Expanda o painel `OpenAI Key`.
 2. Informe sua chave da OpenAI no campo de senha.
 3. Opcionalmente preencha `Transcription prompt`.
-4. Na lista `Files In Chosen Folder`, selecione um arquivo.
-5. Use `Transcribe Selected File` para gerar a primeira transcrição.
-6. Use `Generate New Version` para criar uma nova versão sem sobrescrever a anterior.
+4. Em `Modo de transcrição`, escolha entre:
+   - `Texto normal`;
+   - `Segmentos com timestamp`;
+   - `Diarização`.
+5. Na lista `Files In Chosen Folder`, selecione um arquivo.
+6. Use `Transcribe Selected File` para gerar a primeira transcrição.
+7. Use `Generate New Version` para criar uma nova versão sem sobrescrever a anterior.
+8. No bloco `Resultado reformulado`, copie ou salve o texto com os botões discretos ao lado do título.
 
 ### Live transcript
 
@@ -84,14 +91,20 @@ O último prompt fica salvo no navegador em `localStorage`.
 Para um arquivo `recording-2026-04-10T10-00-00.webm`, os arquivos de transcript podem ser:
 
 - `recording-2026-04-10T10-00-00-transcript.txt`
+- `recording-2026-04-10T10-00-00-transcript-segmentos.txt`
+- `recording-2026-04-10T10-00-00-transcript-diarizado.txt`
 - `recording-2026-04-10T10-00-00-transcript-live.txt`
+- `recording-2026-04-10T10-00-00-transcript-reformulado.txt`
 - `recording-2026-04-10T10-00-00-transcript-2026-04-10T10-15-00.txt`
 - `recording-2026-04-10T10-00-00-transcript-live-2026-04-10T10-15-00.txt`
+- `recording-2026-04-10T10-00-00-transcript-reformulado-2026-04-10T10-15-00.txt`
 
 Regras:
 
 - a primeira transcrição final usa `-transcript.txt`;
+- timestamps e diarização usam sufixos descritivos antes da versão timestampada;
 - o live transcript usa `-transcript-live.txt`;
+- o resultado reformulado usa `-transcript-reformulado.txt`;
 - novas versões recebem timestamp;
 - todos os arquivos ficam na mesma pasta do original.
 
@@ -131,4 +144,3 @@ js/transcription-controller.js
 ## Documentação adicional
 
 - Memorial técnico: [MEMORIAL-TECNICO.md](./MEMORIAL-TECNICO.md)
-

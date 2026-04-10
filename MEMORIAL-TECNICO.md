@@ -84,7 +84,8 @@ Arquivos principais:
 Responsabilidades:
 
 - obter a chave diretamente do campo de senha;
-- chamar `POST /v1/audio/transcriptions` com `gpt-4o-transcribe`;
+- chamar `POST /v1/audio/transcriptions` com o modelo adequado ao modo selecionado, incluindo `gpt-4o-transcribe`, `whisper-1` e `gpt-4o-transcribe-diarize`;
+- oferecer modos estruturados com timestamps por segmento e diarização quando o usuário escolhe essa saída, convertendo a saída JSON em texto legível antes de salvar;
 - segmentar o áudio ao vivo em WAVs independentes;
 - comprimir e dividir arquivos grandes com `ffmpeg.wasm`;
 - reconstruir a transcrição consolidada após vários segmentos.
@@ -121,7 +122,14 @@ Responsabilidades:
 5. Ao pedir transcrição:
    - se o arquivo for pequeno, ele é enviado diretamente;
    - se for grande, ele é comprimido e dividido;
-   - ao final, o transcript é salvo ao lado do original.
+   - ao final, o transcript é salvo ao lado do original, com sufixos descritivos quando o modo estruturado está ativo.
+
+### 4. Pós-processamento do transcript
+
+1. O usuário seleciona uma versão de transcript já salva.
+2. A aplicação envia o texto para o endpoint de responses com o prompt de pós-processamento.
+3. O resultado reformulado aparece no bloco dedicado.
+4. O usuário pode copiar o texto para a área de transferência ou salvá-lo como arquivo `-reformulado`.
 
 ## Estratégia para arquivos grandes
 
@@ -144,12 +152,20 @@ Para um arquivo base `X.ext`:
 
 - transcript final principal:
   - `X-transcript.txt`
+- transcript final com timestamp por segmento:
+  - `X-transcript-segmentos.txt`
+- transcript final com diarização:
+  - `X-transcript-diarizado.txt`
 - transcript final versionado:
   - `X-transcript-<timestamp>.txt`
 - live transcript principal:
   - `X-transcript-live.txt`
 - live transcript versionado:
   - `X-transcript-live-<timestamp>.txt`
+- resultado reformulado principal:
+  - `X-transcript-reformulado.txt`
+- resultado reformulado versionado:
+  - `X-transcript-reformulado-<timestamp>.txt`
 
 O timestamp segue o padrão seguro para nome de arquivo gerado por `dateStamp()`.
 
@@ -247,7 +263,7 @@ Impacto prático:
 - `js/audio-mixer.js`: mixagem e clone do track de áudio.
 - `js/media-library.js`: listagem e transcripts relacionados.
 - `js/openai-client.js`: chamadas à OpenAI.
-- `js/transcription-controller.js`: live transcript, chunking e transcrição consolidada.
+- `js/transcription-controller.js`: live transcript, chunking e transcrição consolidada com modos estruturados.
 
 ## Operação recomendada
 
@@ -256,4 +272,3 @@ Impacto prático:
 - escolher a pasta antes de iniciar qualquer fluxo;
 - validar a chave da OpenAI antes de usar live transcript;
 - revisar o prompt quando o áudio tiver siglas, nomes próprios ou vocabulário específico.
-

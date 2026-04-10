@@ -20,7 +20,12 @@ import { RecorderAPI }                           from './recorder-api.js';
 import { RecorderStateMachine, STATE, EVENT }    from './recorder-state-machine.js';
 import { trackEvent }                            from './analytics.js';
 import { MediaLibrary, isVideoFileName }         from './media-library.js';
-import { OpenAIClientManager, OpenAIConfigError } from './openai-client.js';
+import {
+  OpenAIClientManager,
+  OpenAIConfigError,
+  TRANSCRIPTION_OUTPUT_MODES,
+  TRANSCRIPTION_OUTPUT_MODE_LABELS,
+} from './openai-client.js';
 import { TranscriptionController }               from './transcription-controller.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -49,6 +54,7 @@ const POSTPROCESS_PROMPT_PRESETS = {
   legal: 'Reescreva esta transcrição em linguagem jurídica formal, técnica e impessoal, em português do Brasil. Preserve o conteúdo original, elimine ambiguidades, organize os fatos com clareza e utilize terminologia compatível com documentos jurídicos.',
   executive_summary: 'Reescreva esta transcrição como um resumo executivo em português do Brasil. Destaque objetivo, principais pontos discutidos, decisões, riscos, oportunidades e próximos passos em linguagem clara e concisa.',
 };
+const POSTPROCESS_RESULT_SUFFIX = 'reformulado';
 
 // ── Formatters ─────────────────────────────────────────────────────────────────
 
@@ -106,6 +112,8 @@ const openAiApiKeyInput      = document.getElementById('openai-api-key');
 const openAiApiKeyToggleBtn  = document.getElementById('openai-api-key-toggle');
 const liveTranscriptionChk   = document.getElementById('live-transcription-chk');
 const transcriptionPromptEl  = document.getElementById('transcription-prompt');
+const transcriptionModeSel   = document.getElementById('transcription-mode-select');
+const transcriptionModeHintEl = document.getElementById('transcription-mode-hint');
 const transcriptionStatusEl  = document.getElementById('transcription-status');
 const liveTranscriptOutputEl = document.getElementById('live-transcript-output');
 const liveTranscriptBadgeEl  = document.getElementById('live-transcript-badge');
@@ -126,6 +134,8 @@ const postProcessStatusEl    = document.getElementById('postprocess-status');
 const postProcessPresetSel   = document.getElementById('postprocess-preset-select');
 const postProcessPromptEl    = document.getElementById('postprocess-prompt');
 const postProcessOutputEl    = document.getElementById('postprocess-output');
+const postProcessCopyBtn     = document.getElementById('postprocess-copy-btn');
+const postProcessSaveBtn     = document.getElementById('postprocess-save-btn');
 
 // ── Capability checks ──────────────────────────────────────────────────────────
 
@@ -336,12 +346,92 @@ function openOpenAiPanel() {
   savePref(PREFS.openAiPanelOpen, 'true');
 }
 
-function getTranscriptionPrompt() {
+function getTranscriptionMode() {
+  return transcriptionModeSel?.value || TRANSCRIPTION_OUTPUT_MODES.plain;
+}
+
+function isDiarizationTranscriptionMode() {
+  return getTranscriptionMode() === TRANSCRIPTION_OUTPUT_MODES.diarized;
+}
+
+function getLiveTranscriptionPrompt() {
   return transcriptionPromptEl.value.trim();
+}
+
+function getFileTranscriptionPrompt() {
+  return isDiarizationTranscriptionMode() ? '' : transcriptionPromptEl.value.trim();
 }
 
 function isLiveTranscriptionEnabled() {
   return liveTranscriptionChk.checked;
+}
+
+function updateTranscriptionModeHint() {
+  if (!transcriptionModeHintEl) return;
+
+  transcriptionModeHintEl.textContent =
+    getTranscriptionMode() === TRANSCRIPTION_OUTPUT_MODES.timestamps
+      ? 'Gera um texto legível com timestamps por segmento.'
+      : getTranscriptionMode() === TRANSCRIPTION_OUTPUT_MODES.diarized
+        ? 'Gera speaker labels por segmento. Neste modo, o prompt de transcrição é ignorado apenas no fluxo de arquivo.'
+        : 'Mantém a transcrição em texto simples, como hoje.';
+}
+
+function updatePostProcessActionButtons({ lockControls = false } = {}) {
+  const hasOutput = !!postProcessOutputEl.value.trim();
+  if (postProcessCopyBtn) postProcessCopyBtn.disabled = lockControls || !hasOutput;
+  if (postProcessSaveBtn) postProcessSaveBtn.disabled = lockControls || !hasOutput;
+}
+
+async function copyTextToClipboard(text) {
+  if (!text.trim()) throw new Error('Não há texto para copiar.');
+
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const helper = document.createElement('textarea');
+  helper.value = text;
+  helper.setAttribute('readonly', 'true');
+  helper.style.position = 'fixed';
+  helper.style.opacity = '0';
+  helper.style.pointerEvents = 'none';
+  document.body.appendChild(helper);
+  helper.select();
+  const copied = document.execCommand('copy');
+  helper.remove();
+
+  if (!copied) {
+    throw new Error('Não foi possível copiar o texto para a área de transferência.');
+  }
+}
+
+async function savePostProcessOutput() {
+  const output = postProcessOutputEl.value.trim();
+  if (!output) {
+    throw new Error('Não há resultado reformulado para salvar.');
+  }
+  if (!selectedMediaEntry?.name) {
+    throw new Error('Selecione um arquivo de mídia antes de salvar o resultado reformulado.');
+  }
+
+  const dirOk = await storage.ensureAccess({
+    mode: 'readwrite',
+    silent: false,
+    requestIfNeeded: true,
+  });
+  if (!dirOk) {
+    throw new Error('A pasta escolhida não está disponível para salvar o resultado reformulado.');
+  }
+
+  const result = await mediaLibrary.writeTranscript(selectedMediaEntry.name, output, {
+    suffix: POSTPROCESS_RESULT_SUFFIX,
+  });
+
+  showToast(`Resultado salvo como ${result.fileName}.`, 'success');
+  setPostProcessStatus(`Resultado salvo como ${result.fileName}.`, 'success');
+  return result;
 }
 
 function revokeSelectedPreviewUrl() {
@@ -381,12 +471,14 @@ function syncPostProcessOutput() {
     postProcessOutputEl.value = '';
     postProcessOutputEl.placeholder = 'O resultado processado aparecerá aqui.';
     setPostProcessStatus('Escolha uma transcrição salva para habilitar o pós-processamento.', 'muted');
+    updatePostProcessActionButtons();
     return;
   }
 
   const cached = postProcessResultsByTranscript.get(cacheKey) || '';
   postProcessOutputEl.value = cached;
   postProcessOutputEl.placeholder = 'O resultado processado aparecerá aqui.';
+  updatePostProcessActionButtons();
   setPostProcessStatus(
     cached
       ? 'Exibindo o último texto reformulado desta versão da transcrição.'
@@ -405,6 +497,7 @@ function clearSelectedMediaState(message = 'Selecione um arquivo da pasta escolh
   clearTranscriptViewer();
   setSelectedTranscriptStatus('Selecione um arquivo para carregar a transcrição.', 'muted');
   postProcessOutputEl.value = '';
+  updatePostProcessActionButtons();
   setPostProcessStatus('Escolha um arquivo e uma versão da transcrição para executar o pós-processamento.', 'muted');
   hideMediaDetailPanel();
 }
@@ -657,6 +750,8 @@ async function transcribeSelectedMedia({ alwaysVersion = false } = {}) {
   if (!selectedMediaEntry) return;
   const mediaName = selectedMediaEntry.name;
   const mediaHandle = selectedMediaEntry.handle;
+  const mode = getTranscriptionMode();
+  const modeLabel = TRANSCRIPTION_OUTPUT_MODE_LABELS[mode] || TRANSCRIPTION_OUTPUT_MODE_LABELS.plain;
 
   try {
     openAiClient.assertConfigured();
@@ -670,17 +765,22 @@ async function transcribeSelectedMedia({ alwaysVersion = false } = {}) {
     return;
   }
 
-  trackEvent('captura_transcription_start', { file_name: mediaName, force_new_version: alwaysVersion });
+  trackEvent('captura_transcription_start', {
+    file_name: mediaName,
+    force_new_version: alwaysVersion,
+    mode,
+  });
   transcriptionBusy = true;
   renderMediaFileList();
   render(machine.state);
-  setSelectedTranscriptStatus(`Preparando ${mediaName} para transcrição…`, 'muted');
-  setTranscriptionStatus(`Preparando ${mediaName} para transcrição…`, 'muted');
+  setSelectedTranscriptStatus(`Preparando ${mediaName} para transcrição em ${modeLabel}…`, 'muted');
+  setTranscriptionStatus(`Preparando ${mediaName} para transcrição em ${modeLabel}…`, 'muted');
 
   try {
     const result = await transcriptionController.transcribeFileHandle(mediaHandle, {
-      prompt: getTranscriptionPrompt(),
+      prompt: getFileTranscriptionPrompt(),
       alwaysVersion,
+      mode,
       onProgress: payload => {
         if (payload?.message) {
           setSelectedTranscriptStatus(payload.message, 'muted');
@@ -692,7 +792,11 @@ async function transcribeSelectedMedia({ alwaysVersion = false } = {}) {
     showToast(`Transcrição salva como ${result.fileName}.`, 'success');
     setSelectedTranscriptStatus(`Transcrição salva como ${result.fileName}.`, 'success');
     setTranscriptionStatus(`Transcrição salva como ${result.fileName}.`, 'success');
-    trackEvent('captura_transcription_saved', { file_name: mediaName, transcript_name: result.fileName });
+    trackEvent('captura_transcription_saved', {
+      file_name: mediaName,
+      transcript_name: result.fileName,
+      mode,
+    });
     await refreshMediaLibrary({
       preferredMediaName: mediaName,
       preferredTranscriptName: result.fileName,
@@ -751,6 +855,7 @@ async function processSelectedTranscript() {
 
     if (cacheKey) postProcessResultsByTranscript.set(cacheKey, result);
     postProcessOutputEl.value = result;
+    updatePostProcessActionButtons();
     setPostProcessStatus('Texto reformulado com sucesso.', 'success');
     setTranscriptionStatus(`Pós-processamento concluído para ${transcriptName}.`, 'success');
     trackEvent('captura_postprocess_saved', {
@@ -809,7 +914,7 @@ async function startLiveTranscriptionForRecording() {
   try {
     await transcriptionController.startLiveTranscription({
       track,
-      prompt: getTranscriptionPrompt(),
+      prompt: getLiveTranscriptionPrompt(),
     });
     setLiveTranscriptBadge('Ouvindo', 'badge bg-success');
     trackEvent('captura_live_transcription_start');
@@ -847,10 +952,12 @@ async function finalizeSavedRecordingTranscript(fileHandle) {
 
   transcriptionBusy = true;
   recordingTranscriptInFlight = true;
+  const mode = getTranscriptionMode();
+  const modeLabel = TRANSCRIPTION_OUTPUT_MODE_LABELS[mode] || TRANSCRIPTION_OUTPUT_MODE_LABELS.plain;
   renderMediaFileList();
   render(machine.state);
   setLiveTranscriptBadge('Finalizando', 'badge bg-info');
-  setTranscriptionStatus('Transcrevendo a gravação salva…', 'muted');
+  setTranscriptionStatus(`Transcrevendo a gravação salva em ${modeLabel}…`, 'muted');
 
   let preferredTranscriptName = '';
 
@@ -864,7 +971,8 @@ async function finalizeSavedRecordingTranscript(fileHandle) {
     }
 
     const result = await transcriptionController.transcribeFileHandle(fileHandle, {
-      prompt: getTranscriptionPrompt(),
+      prompt: getFileTranscriptionPrompt(),
+      mode,
       onProgress: payload => {
         if (payload?.message) setTranscriptionStatus(payload.message, 'muted');
       },
@@ -874,7 +982,7 @@ async function finalizeSavedRecordingTranscript(fileHandle) {
     showToast(`Transcrição salva como ${result.fileName}.`, 'success');
     setTranscriptionStatus(`Transcrição salva como ${result.fileName}.`, 'success');
     setLiveTranscriptBadge('Salvo', 'badge bg-success');
-    trackEvent('captura_recording_transcript_saved', { transcript_name: result.fileName });
+    trackEvent('captura_recording_transcript_saved', { transcript_name: result.fileName, mode });
 
     await refreshMediaLibrary({
       preferredMediaName: fileHandle.name,
@@ -954,6 +1062,7 @@ function render(state) {
   formatSel.disabled      = lockControls;
   liveTranscriptionChk.disabled = lockControls;
   transcriptionPromptEl.disabled = lockControls;
+  transcriptionModeSel.disabled = lockControls;
   openAiApiKeyInput.disabled = lockControls;
   openAiApiKeyToggleBtn.disabled = lockControls;
   refreshLibraryBtn.disabled = lockControls || !storage.dirHandle;
@@ -963,6 +1072,7 @@ function render(state) {
   processSelectedTranscriptBtn.disabled = lockControls || !hasSelectedTranscript;
   postProcessPromptEl.disabled = lockControls;
   postProcessPresetSel.disabled = lockControls;
+  updatePostProcessActionButtons({ lockControls });
 
   statusBadge.textContent =
       isRec      ? '⏺ Gravando'
@@ -1266,11 +1376,17 @@ function restoreSimplePrefs() {
   const savedPrompt = loadPref(PREFS.transcriptionPrompt);
   if (savedPrompt !== null) transcriptionPromptEl.value = savedPrompt;
 
+  const savedTranscriptionMode = loadPref(PREFS.transcriptionMode);
+  if (savedTranscriptionMode && transcriptionModeSel.querySelector(`option[value="${CSS.escape(savedTranscriptionMode)}"]`)) {
+    transcriptionModeSel.value = savedTranscriptionMode;
+  }
+
   const savedPostProcessPrompt = loadPref(PREFS.postProcessPrompt);
   if (savedPostProcessPrompt !== null) postProcessPromptEl.value = savedPostProcessPrompt;
 
   restoreDetailsPref(openAiPanel, PREFS.openAiPanelOpen);
   restoreDetailsPref(transcriptionPanel, PREFS.transcriptionPanelOpen);
+  updateTranscriptionModeHint();
 }
 
 function restoreDevicePrefs() {
@@ -1427,8 +1543,42 @@ transcriptionPromptEl.addEventListener('input', () => {
   savePref(PREFS.transcriptionPrompt, transcriptionPromptEl.value);
 });
 
+transcriptionModeSel.addEventListener('change', () => {
+  savePref(PREFS.transcriptionMode, transcriptionModeSel.value);
+  trackEvent('captura_pref_change', { pref: 'transcription_mode', value: transcriptionModeSel.value });
+  updateTranscriptionModeHint();
+  render(machine.state);
+});
+
 postProcessPromptEl.addEventListener('input', () => {
   savePref(PREFS.postProcessPrompt, postProcessPromptEl.value);
+});
+
+postProcessCopyBtn.addEventListener('click', async () => {
+  try {
+    await copyTextToClipboard(postProcessOutputEl.value);
+    showToast('Resultado copiado para a área de transferência.', 'success');
+  } catch (error) {
+    handleTranscriptionError(error, {
+      toast: true,
+      dialog: false,
+      updateTranscriptPane: false,
+      updateLivePane: false,
+    });
+  }
+});
+
+postProcessSaveBtn.addEventListener('click', async () => {
+  try {
+    await savePostProcessOutput();
+  } catch (error) {
+    handleTranscriptionError(error, {
+      toast: true,
+      dialog: false,
+      updateTranscriptPane: false,
+      updateLivePane: false,
+    });
+  }
 });
 
 errorDialog?.addEventListener('close', () => {

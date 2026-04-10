@@ -340,6 +340,18 @@
               ></textarea>
             </label>
 
+            <label class="captura-field" for="transcription-mode-select">
+              <span class="captura-field-label">Modo de transcrição</span>
+              <select id="transcription-mode-select" class="form-select form-select-sm">
+                <option value="plain" selected>Texto normal</option>
+                <option value="timestamps">Segmentos com timestamp</option>
+                <option value="diarized">Diarização</option>
+              </select>
+              <p id="transcription-mode-hint" class="captura-side-note mb-0">
+                Mantém a transcrição em texto simples, como hoje.
+              </p>
+            </label>
+
             <label class="captura-field" for="transcript-viewer">
               <span class="captura-field-label">Transcrição</span>
               <textarea
@@ -393,8 +405,20 @@
                 </button>
               </div>
 
-              <label class="captura-field" for="postprocess-output">
-                <span class="captura-field-label">Resultado reformulado</span>
+              <div class="captura-field captura-result-field">
+                <div class="captura-field-header">
+                  <label class="captura-field-label" for="postprocess-output">Resultado reformulado</label>
+                  <div class="captura-result-actions">
+                    <button id="postprocess-copy-btn" type="button" class="captura-glass-button" aria-label="Copiar resultado reformulado" title="Copiar resultado reformulado">
+                      <i class="fas fa-copy"></i>
+                      <span class="visually-hidden">Copiar resultado reformulado</span>
+                    </button>
+                    <button id="postprocess-save-btn" type="button" class="captura-glass-button" aria-label="Salvar resultado reformulado" title="Salvar resultado reformulado">
+                      <i class="fas fa-floppy-disk"></i>
+                      <span class="visually-hidden">Salvar resultado reformulado</span>
+                    </button>
+                  </div>
+                </div>
                 <textarea
                   id="postprocess-output"
                   class="form-control form-control-sm capturatranscript-textarea captura-result-textarea"
@@ -402,7 +426,7 @@
                   readonly
                   placeholder="O resultado processado aparecerá aqui."
                 ></textarea>
-              </label>
+              </div>
             </section>
           </section>
         </section>

@@ -1,6 +1,7 @@
 import { FFmpeg } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js';
 import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/esm/index.js';
 import { isVideoFileName } from './media-library.js';
+import { TRANSCRIPTION_OUTPUT_MODES, TRANSCRIPTION_OUTPUT_MODE_SUFFIXES } from './openai-client.js';
 
 const SAFE_UPLOAD_BYTES = 24 * 1024 * 1024;
 const LIVE_CHUNK_MS = 10_000;
@@ -146,6 +147,84 @@ function mergeTranscriptText(previousText, nextText) {
 
   const words = cleanNextText.split(/\s+/).filter(Boolean);
   return `${cleanPreviousText}\n${words.slice(overlapCount).join(' ')}`.trim();
+}
+
+function padTimeValue(value) {
+  return String(value).padStart(2, '0');
+}
+
+function formatStructuredTimestamp(seconds) {
+  const totalMs = Math.max(0, Math.round(Number(seconds || 0) * 1000));
+  const hours = Math.floor(totalMs / 3_600_000);
+  const minutes = Math.floor((totalMs % 3_600_000) / 60_000);
+  const secs = Math.floor((totalMs % 60_000) / 1_000);
+  const tenths = Math.floor((totalMs % 1_000) / 100);
+
+  const base = hours > 0
+    ? `${padTimeValue(hours)}:${padTimeValue(minutes)}:${padTimeValue(secs)}`
+    : `${padTimeValue(minutes)}:${padTimeValue(secs)}`;
+
+  return `${base}.${tenths}`;
+}
+
+function normalizeStructuredSegments(segments = [], offsetSeconds = 0) {
+  return segments
+    .map(segment => {
+      const text = typeof segment?.text === 'string' ? segment.text.trim() : '';
+      if (!text) return null;
+
+      const start = Number(segment?.start);
+      const end = Number(segment?.end);
+
+      const normalizedStart = Number.isFinite(start) ? start + offsetSeconds : offsetSeconds;
+      const normalizedEnd = Number.isFinite(end) ? end + offsetSeconds : normalizedStart;
+
+      return {
+        id: typeof segment?.id === 'string' ? segment.id : '',
+        start: normalizedStart,
+        end: Math.max(normalizedStart, normalizedEnd),
+        text,
+        speaker: typeof segment?.speaker === 'string' ? segment.speaker.trim() : '',
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.start - b.start || a.end - b.end || a.text.localeCompare(b.text, undefined, { sensitivity: 'base' }));
+}
+
+function normalizeStructuredText(text) {
+  return text.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function areDuplicateStructuredSegments(previous, current) {
+  if (!previous || !current) return false;
+  if (previous.speaker !== current.speaker) return false;
+
+  const previousText = normalizeStructuredText(previous.text);
+  const currentText = normalizeStructuredText(current.text);
+  if (!previousText || previousText !== currentText) return false;
+
+  const timeDelta = Math.max(Math.abs(previous.start - current.start), Math.abs(previous.end - current.end));
+  return timeDelta <= 1;
+}
+
+function mergeStructuredSegments(previousSegments, nextSegments) {
+  const merged = [...previousSegments];
+  nextSegments.forEach(segment => {
+    const previous = merged[merged.length - 1];
+    if (areDuplicateStructuredSegments(previous, segment)) return;
+    merged.push(segment);
+  });
+  return merged;
+}
+
+function formatStructuredTranscript(segments, { includeSpeaker = false } = {}) {
+  return segments
+    .map(segment => {
+      const range = `[${formatStructuredTimestamp(segment.start)} - ${formatStructuredTimestamp(segment.end)}]`;
+      const speaker = includeSpeaker && segment.speaker ? `${segment.speaker}: ` : '';
+      return `${range} ${speaker}${segment.text}`.trim();
+    })
+    .join('\n');
 }
 
 function getMediaDuration(blob) {
@@ -384,20 +463,67 @@ export class TranscriptionController {
     return this.liveTranscript;
   }
 
-  async transcribeFileHandle(fileHandle, { prompt = '', alwaysVersion = false, onProgress } = {}) {
+  async transcribeFileHandle(fileHandle, { prompt = '', alwaysVersion = false, onProgress, mode = TRANSCRIPTION_OUTPUT_MODES.plain } = {}) {
     const file = await fileHandle.getFile();
-    const text = await this.transcribeFile(file, { prompt, onProgress });
-    const savedTranscript = await this.#mediaLibrary.writeTranscript(file.name, text, { alwaysVersion });
-    return { text, ...savedTranscript };
+    const result = await this.transcribeFile(file, { prompt, onProgress, mode });
+    const savedTranscript = await this.#mediaLibrary.writeTranscript(file.name, result.text, {
+      alwaysVersion,
+      suffix: TRANSCRIPTION_OUTPUT_MODE_SUFFIXES[mode] || '',
+    });
+    return { ...result, ...savedTranscript };
   }
 
-  async transcribeFile(file, { prompt = '', onProgress } = {}) {
+  async transcribeFile(file, { prompt = '', onProgress, mode = TRANSCRIPTION_OUTPUT_MODES.plain } = {}) {
     if (!(file instanceof File)) throw new Error('Nenhum arquivo foi selecionado para transcrição.');
 
     const needsNormalization = file.size > SAFE_UPLOAD_BYTES || isVideoMediaFile(file);
+    const structuredMode = mode === TRANSCRIPTION_OUTPUT_MODES.timestamps || mode === TRANSCRIPTION_OUTPUT_MODES.diarized;
+
+    if (!structuredMode) {
+      if (!needsNormalization) {
+        onProgress?.({ stage: 'uploading', message: `Enviando ${file.name} para a OpenAI…` });
+        const text = await this.#clientManager.transcribeFile({ file, prompt });
+        return { text: text.trim(), mode };
+      }
+
+      onProgress?.({
+        stage: 'preparing',
+        message: isVideoMediaFile(file)
+          ? `Extraindo áudio de ${file.name} para transcrição…`
+          : `Preparando ${file.name} para transcrição em partes…`,
+      });
+      const chunks = await this.#createUploadChunks(file, onProgress);
+      let transcript = '';
+
+      for (let index = 0; index < chunks.length; index += 1) {
+        const chunk = chunks[index];
+        const chunkPrompt = buildPrompt(prompt, transcript);
+        onProgress?.({
+          stage: 'transcribing',
+          message: `Transcrevendo parte ${index + 1} de ${chunks.length}…`,
+          current: index + 1,
+          total: chunks.length,
+        });
+        const chunkText = await this.#clientManager.transcribeFile({ file: chunk, prompt: chunkPrompt });
+        transcript = mergeTranscriptText(transcript, chunkText);
+      }
+
+      return { text: transcript.trim(), mode };
+    }
+
     if (!needsNormalization) {
       onProgress?.({ stage: 'uploading', message: `Enviando ${file.name} para a OpenAI…` });
-      return this.#clientManager.transcribeFile({ file, prompt });
+      const result = await this.#clientManager.transcribeFileDetailed({ file, prompt, mode });
+      const segments = normalizeStructuredSegments(result.segments);
+      const text = segments.length
+        ? formatStructuredTranscript(segments, { includeSpeaker: mode === TRANSCRIPTION_OUTPUT_MODES.diarized })
+        : (result.text || '').trim();
+      return {
+        text,
+        rawText: (result.text || '').trim(),
+        segments,
+        mode,
+      };
     }
 
     onProgress?.({
@@ -406,26 +532,46 @@ export class TranscriptionController {
         ? `Extraindo áudio de ${file.name} para transcrição…`
         : `Preparando ${file.name} para transcrição em partes…`,
     });
-    const chunks = await this.#createUploadChunks(file, onProgress);
+    const chunks = await this.#createUploadChunks(file, onProgress, { includeOffsets: true });
     let transcript = '';
+    let structuredSegments = [];
 
     for (let index = 0; index < chunks.length; index += 1) {
       const chunk = chunks[index];
-      const chunkPrompt = buildPrompt(prompt, transcript);
+      const chunkPrompt = mode === TRANSCRIPTION_OUTPUT_MODES.diarized ? '' : buildPrompt(prompt, transcript);
       onProgress?.({
         stage: 'transcribing',
         message: `Transcrevendo parte ${index + 1} de ${chunks.length}…`,
         current: index + 1,
         total: chunks.length,
       });
-      const chunkText = await this.#clientManager.transcribeFile({ file: chunk, prompt: chunkPrompt });
+
+      const chunkResult = await this.#clientManager.transcribeFileDetailed({
+        file: chunk.file,
+        prompt: chunkPrompt,
+        mode,
+      });
+
+      const chunkText = (chunkResult.text || '').trim();
       transcript = mergeTranscriptText(transcript, chunkText);
+
+      const chunkSegments = normalizeStructuredSegments(chunkResult.segments, chunk.startSeconds);
+      structuredSegments = mergeStructuredSegments(structuredSegments, chunkSegments);
     }
 
-    return transcript.trim();
+    const text = structuredSegments.length
+      ? formatStructuredTranscript(structuredSegments, { includeSpeaker: mode === TRANSCRIPTION_OUTPUT_MODES.diarized })
+      : transcript.trim();
+
+    return {
+      text,
+      rawText: transcript.trim(),
+      segments: structuredSegments,
+      mode,
+    };
   }
 
-  async #createUploadChunks(file, onProgress) {
+  async #createUploadChunks(file, onProgress, { includeOffsets = false } = {}) {
     const ffmpeg = await getFfmpeg(onProgress);
     const inputName = `input.${getExtension(file.name) || 'bin'}`;
     const normalizedName = 'normalized.mp3';
@@ -455,12 +601,14 @@ export class TranscriptionController {
       );
 
       if (normalizedFile.size <= SAFE_UPLOAD_BYTES) {
-        return [normalizedFile];
+        const singleChunk = { file: normalizedFile, startSeconds: 0 };
+        return includeOffsets ? [singleChunk] : [normalizedFile];
       }
 
       const duration = await getMediaDuration(normalizedFile);
       if (!duration) {
-        return [normalizedFile];
+        const singleChunk = { file: normalizedFile, startSeconds: 0 };
+        return includeOffsets ? [singleChunk] : [normalizedFile];
       }
 
       const chunks = [];
@@ -489,9 +637,8 @@ export class TranscriptionController {
         ]);
 
         const chunkData = await ffmpeg.readFile(outputName);
-        chunks.push(
-          blobToFile(new Blob([chunkData], { type: 'audio/mpeg' }), `${file.name.replace(/\.[^.]+$/, '')}-part-${chunkIndex}.mp3`, 'audio/mpeg')
-        );
+        const chunkFile = blobToFile(new Blob([chunkData], { type: 'audio/mpeg' }), `${file.name.replace(/\.[^.]+$/, '')}-part-${chunkIndex}.mp3`, 'audio/mpeg');
+        chunks.push(includeOffsets ? { file: chunkFile, startSeconds: start } : chunkFile);
         await ffmpeg.deleteFile(outputName).catch(() => {});
       }
 

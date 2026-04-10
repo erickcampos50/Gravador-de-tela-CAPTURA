@@ -840,6 +840,50 @@ body.captura-body ::selection {
   min-height: 14rem;
 }
 
+.captura-field-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.captura-result-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.captura-glass-button {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(210, 210, 215, 0.58);
+  background: rgba(255, 255, 255, 0.60);
+  backdrop-filter: blur(16px) saturate(180%);
+  color: var(--captura-text-muted);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.05);
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.captura-glass-button:hover {
+  border-color: rgba(0, 102, 204, 0.22);
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--captura-text);
+  box-shadow: var(--captura-shadow-soft);
+  transform: translateY(-1px);
+}
+
+.captura-glass-button:disabled {
+  opacity: 0.42;
+  box-shadow: none;
+  transform: none;
+}
+
 .captura-details {
   padding: 1rem 1rem 0.95rem;
   border-radius: 18px;
@@ -951,6 +995,7 @@ body.captura-body ::selection {
 .captura-engine-secondary:focus,
 .captura-refresh-pill:focus,
 .captura-stage-expand:focus,
+.captura-glass-button:focus,
 #openai-api-key-toggle:focus {
   border-color: rgba(0, 102, 204, 0.55);
   box-shadow: 0 0 0 0.22rem rgba(0, 102, 204, 0.14);

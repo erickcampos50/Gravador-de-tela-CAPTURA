@@ -13,6 +13,10 @@ function getBaseName(fileName) {
   return fileName.replace(/\.[^.]+$/, '');
 }
 
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function isTranscriptNameFor(mediaFileName, candidateName, variant = 'any') {
   const baseName = getBaseName(mediaFileName);
   const hasTxtExtension = (/\.txt$/i).test(candidateName);
@@ -92,16 +96,23 @@ export class MediaLibrary {
     return this.#storage.readTextFile(handle);
   }
 
-  async writeTranscript(mediaFileName, transcriptText, { alwaysVersion = false, variant = 'final' } = {}) {
+  async writeTranscript(mediaFileName, transcriptText, { alwaysVersion = false, variant = 'final', suffix = '' } = {}) {
     const trimmed = transcriptText.trim();
     if (!trimmed) throw new Error('A transcrição está vazia.');
 
     const baseName = getBaseName(mediaFileName);
-    const existing = await this.getRelatedTranscripts(mediaFileName, { variant });
     const transcriptStem = variant === 'live'
       ? `${baseName}-transcript-live`
-      : `${baseName}-transcript`;
-    const fileName = !alwaysVersion && existing.length === 0
+      : suffix
+        ? `${baseName}-transcript-${suffix}`
+        : `${baseName}-transcript`;
+    const entries = await this.#storage.listDirectoryFileHandles();
+    const transcriptVersionPattern = new RegExp(`^${escapeRegExp(transcriptStem)}-\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}\\.txt$`);
+    const hasStem = entries.some(entry =>
+      entry.name === `${transcriptStem}.txt`
+      || transcriptVersionPattern.test(entry.name)
+    );
+    const fileName = !alwaysVersion && !hasStem
       ? `${transcriptStem}.txt`
       : `${transcriptStem}-${dateStamp()}.txt`;
 

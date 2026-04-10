@@ -12,6 +12,24 @@ const TRANSCRIPTION_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
 const TRANSCRIPTION_RETRYABLE_STATUS = new Set([401, 403, 404]);
 const TRANSCRIPTION_RETRYABLE_MESSAGE_RE = /(model|access|permission|available|not found|does not exist|unsupported)/i;
 
+export const TRANSCRIPTION_OUTPUT_MODES = {
+  plain: 'plain',
+  timestamps: 'timestamps',
+  diarized: 'diarized',
+};
+
+export const TRANSCRIPTION_OUTPUT_MODE_LABELS = {
+  [TRANSCRIPTION_OUTPUT_MODES.plain]: 'Texto normal',
+  [TRANSCRIPTION_OUTPUT_MODES.timestamps]: 'Segmentos com timestamp',
+  [TRANSCRIPTION_OUTPUT_MODES.diarized]: 'Diarização',
+};
+
+export const TRANSCRIPTION_OUTPUT_MODE_SUFFIXES = {
+  [TRANSCRIPTION_OUTPUT_MODES.plain]: '',
+  [TRANSCRIPTION_OUTPUT_MODES.timestamps]: 'segmentos',
+  [TRANSCRIPTION_OUTPUT_MODES.diarized]: 'diarizado',
+};
+
 class OpenAIRequestError extends Error {
   constructor(message, { status = null, model = '', requestId = '', cause = null } = {}) {
     super(message);
@@ -125,6 +143,29 @@ function extractResponseText(data) {
   return parts.join('\n\n').trim();
 }
 
+function normalizeTranscriptionSegments(data) {
+  if (!Array.isArray(data?.segments)) return [];
+
+  return data.segments
+    .map(segment => {
+      const text = typeof segment?.text === 'string' ? segment.text.trim() : '';
+      if (!text) return null;
+
+      const start = Number(segment?.start);
+      const end = Number(segment?.end);
+
+      return {
+        id: typeof segment?.id === 'string' ? segment.id : '',
+        start: Number.isFinite(start) ? start : 0,
+        end: Number.isFinite(end) ? end : 0,
+        text,
+        speaker: typeof segment?.speaker === 'string' ? segment.speaker.trim() : '',
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.start - b.start || a.end - b.end || a.text.localeCompare(b.text, undefined, { sensitivity: 'base' }));
+}
+
 export class OpenAIClientManager {
   #apiKeyInput;
 
@@ -174,6 +215,38 @@ export class OpenAIClientManager {
     throw new Error('Não foi possível transcrever o arquivo selecionado.');
   }
 
+  async transcribeFileDetailed({ file, prompt = '', signal, mode = TRANSCRIPTION_OUTPUT_MODES.timestamps } = {}) {
+    const apiKey = this.assertConfigured();
+    if (!(file instanceof File)) {
+      throw new Error('Nenhum arquivo de áudio foi enviado para transcrição.');
+    }
+
+    if (mode === TRANSCRIPTION_OUTPUT_MODES.timestamps) {
+      return await this.#transcribeStructuredFileOnce({
+        apiKey,
+        file,
+        prompt,
+        signal,
+        model: 'whisper-1',
+        responseFormat: 'verbose_json',
+        timestampGranularities: ['segment'],
+      });
+    }
+
+    if (mode === TRANSCRIPTION_OUTPUT_MODES.diarized) {
+      return await this.#transcribeStructuredFileOnce({
+        apiKey,
+        file,
+        signal,
+        model: 'gpt-4o-transcribe-diarize',
+        responseFormat: 'diarized_json',
+        chunkingStrategy: 'auto',
+      });
+    }
+
+    throw new Error(`Modo de transcrição estruturada inválido: ${mode}.`);
+  }
+
   async #transcribeFileOnce({ apiKey, file, prompt, signal, model }) {
     const formData = new FormData();
     formData.append('file', file, file.name || 'audio.webm');
@@ -203,6 +276,75 @@ export class OpenAIClientManager {
       }
 
       return (await response.text()).trim();
+    } catch (error) {
+      if (timedOut()) {
+        throw new Error(`A transcrição com ${model} excedeu o tempo limite de ${formatTimeoutLabel(TRANSCRIPTION_REQUEST_TIMEOUT_MS)}.`);
+      }
+
+      if (isLikelyBrowserFetchError(error)) {
+        throw new Error(
+          `Não foi possível conectar à OpenAI ao transcrever com ${model}. ` +
+          'Verifique a chave, a conexão e se o navegador permite essa requisição a partir da origem local.'
+        );
+      }
+
+      throw error;
+    } finally {
+      cleanup();
+    }
+  }
+
+  async #transcribeStructuredFileOnce({
+    apiKey,
+    file,
+    prompt = '',
+    signal,
+    model,
+    responseFormat,
+    timestampGranularities = [],
+    chunkingStrategy = '',
+  }) {
+    const formData = new FormData();
+    formData.append('file', file, file.name || 'audio.webm');
+    formData.append('model', model);
+    if (prompt.trim() && responseFormat !== 'diarized_json') formData.append('prompt', prompt.trim());
+    if (responseFormat) formData.append('response_format', responseFormat);
+    timestampGranularities.forEach(value => formData.append('timestamp_granularities[]', value));
+    if (chunkingStrategy) formData.append('chunking_strategy', chunkingStrategy);
+
+    const { signal: requestSignal, timedOut, cleanup } = createRequestSignal(signal, TRANSCRIPTION_REQUEST_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(TRANSCRIPTIONS_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: formData,
+        signal: requestSignal,
+      });
+
+      if (!response.ok) {
+        throw await readErrorResponse(response, model);
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = (await response.text()).trim();
+        return { text, raw: null, segments: [], model };
+      }
+
+      const data = await response.json();
+      const text = typeof data?.text === 'string'
+        ? data.text.trim()
+        : extractResponseText(data);
+
+      return {
+        text,
+        raw: data,
+        segments: normalizeTranscriptionSegments(data),
+        model,
+      };
     } catch (error) {
       if (timedOut()) {
         throw new Error(`A transcrição com ${model} excedeu o tempo limite de ${formatTimeoutLabel(TRANSCRIPTION_REQUEST_TIMEOUT_MS)}.`);
