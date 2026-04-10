@@ -3,6 +3,7 @@ import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@
 
 const SAFE_UPLOAD_BYTES = 24 * 1024 * 1024;
 const LIVE_CHUNK_MS = 10_000;
+const MIN_LIVE_CHUNK_SECONDS = 0.35;
 const NORMALIZED_BITRATE = '64k';
 const NORMALIZED_SAMPLE_RATE = '24000';
 const FILE_CHUNK_SECONDS = 10 * 60;
@@ -15,17 +16,72 @@ function getExtension(fileName) {
   return parts.length > 1 ? parts.pop().toLowerCase() : '';
 }
 
-function getLiveChunkMimeType() {
-  const candidates = [
-    'audio/webm;codecs=opus',
-    'audio/webm',
-    'audio/mp4',
-  ];
-  return candidates.find(type => MediaRecorder.isTypeSupported(type)) || '';
-}
-
 function blobToFile(blob, fileName, type = blob.type) {
   return new File([blob], fileName, { type: type || 'application/octet-stream' });
+}
+
+function encodeWavFromFloat32(samples, sampleRate) {
+  const bytesPerSample = 2;
+  const dataSize = samples.length * bytesPerSample;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  const writeAscii = (offset, text) => {
+    for (let index = 0; index < text.length; index += 1) {
+      view.setUint8(offset + index, text.charCodeAt(index));
+    }
+  };
+
+  writeAscii(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeAscii(8, 'WAVE');
+  writeAscii(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * bytesPerSample, true);
+  view.setUint16(32, bytesPerSample, true);
+  view.setUint16(34, 16, true);
+  writeAscii(36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  let offset = 44;
+  for (let index = 0; index < samples.length; index += 1) {
+    const sample = Math.max(-1, Math.min(1, samples[index]));
+    const pcm = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+    view.setInt16(offset, Math.round(pcm), true);
+    offset += bytesPerSample;
+  }
+
+  return new Blob([buffer], { type: 'audio/wav' });
+}
+
+function mergeFloat32Chunks(chunks, totalSamples) {
+  const merged = new Float32Array(totalSamples);
+  let offset = 0;
+  chunks.forEach(chunk => {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  });
+  return merged;
+}
+
+function extractMonoSamples(inputBuffer) {
+  const channelCount = inputBuffer.numberOfChannels;
+  if (channelCount <= 1) {
+    return new Float32Array(inputBuffer.getChannelData(0));
+  }
+
+  const frameCount = inputBuffer.length;
+  const mono = new Float32Array(frameCount);
+  for (let channelIndex = 0; channelIndex < channelCount; channelIndex += 1) {
+    const channelData = inputBuffer.getChannelData(channelIndex);
+    for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+      mono[frameIndex] += channelData[frameIndex] / channelCount;
+    }
+  }
+  return mono;
 }
 
 function truncateContext(text, maxChars = 1_200) {
@@ -130,12 +186,17 @@ async function getFfmpeg(onProgress) {
 class RollingTranscriptionSession {
   #clientManager;
   #prompt = '';
-  #recorder = null;
+  #audioContext = null;
+  #sourceNode = null;
+  #processorNode = null;
+  #silenceGainNode = null;
   #stream = null;
   #track = null;
+  #chunkBuffers = [];
+  #chunkSampleCount = 0;
+  #flushTimerId = null;
+  #paused = false;
   #processing = Promise.resolve();
-  #stopPromise = Promise.resolve();
-  #stopResolver = null;
   #chunkIndex = 0;
   #transcript = '';
   #onUpdate;
@@ -155,68 +216,89 @@ class RollingTranscriptionSession {
 
   async start({ track, prompt = '' }) {
     if (!track) throw new Error('No mixed audio track is available for live transcription.');
-    if (!window.MediaRecorder) throw new Error('This browser does not support live chunk transcription.');
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) throw new Error('This browser does not support live chunk transcription.');
 
     this.#prompt = prompt;
     this.#track = track;
     this.#stream = new MediaStream([track]);
+    this.#audioContext = new AudioContextCtor({ latencyHint: 'interactive' });
+    this.#sourceNode = this.#audioContext.createMediaStreamSource(this.#stream);
+    this.#processorNode = this.#audioContext.createScriptProcessor(4096, 2, 1);
+    this.#silenceGainNode = this.#audioContext.createGain();
+    this.#silenceGainNode.gain.value = 0;
 
-    const mimeType = getLiveChunkMimeType();
-    const options = mimeType ? { mimeType } : undefined;
-    this.#recorder = new MediaRecorder(this.#stream, options);
-    this.#stopPromise = new Promise(resolve => { this.#stopResolver = resolve; });
+    this.#processorNode.onaudioprocess = event => {
+      if (this.#paused) return;
+      const mono = extractMonoSamples(event.inputBuffer);
+      if (!mono.length) return;
+      this.#chunkBuffers.push(mono);
+      this.#chunkSampleCount += mono.length;
+    };
 
-    this.#recorder.addEventListener('dataavailable', event => {
-      if (event.data?.size) this.#queueChunk(event.data);
-    });
+    this.#sourceNode.connect(this.#processorNode);
+    this.#processorNode.connect(this.#silenceGainNode);
+    this.#silenceGainNode.connect(this.#audioContext.destination);
+    await this.#audioContext.resume();
 
-    this.#recorder.addEventListener('stop', () => {
-      this.#stopResolver?.();
-      this.#stopResolver = null;
-    }, { once: true });
+    this.#flushTimerId = window.setInterval(() => {
+      void this.#flushChunk();
+    }, LIVE_CHUNK_MS);
 
     this.#onStatus?.({ stage: 'live', message: 'Live transcription is listening…' });
-    this.#recorder.start(LIVE_CHUNK_MS);
   }
 
   pause() {
-    if (this.#recorder?.state === 'recording') {
-      this.#recorder.requestData();
-      this.#recorder.pause();
-      this.#onStatus?.({ stage: 'live', message: 'Live transcription paused.' });
-    }
+    this.#paused = true;
+    void this.#flushChunk(true);
+    this.#onStatus?.({ stage: 'live', message: 'Live transcription paused.' });
   }
 
   resume() {
-    if (this.#recorder?.state === 'paused') {
-      this.#recorder.resume();
-      this.#onStatus?.({ stage: 'live', message: 'Live transcription resumed.' });
-    }
+    this.#paused = false;
+    this.#onStatus?.({ stage: 'live', message: 'Live transcription resumed.' });
   }
 
   async stop() {
-    if (!this.#recorder) return this.transcript;
+    if (!this.#audioContext) return this.transcript;
 
-    if (this.#recorder.state === 'paused') this.#recorder.resume();
-    if (this.#recorder.state !== 'inactive') {
-      this.#recorder.requestData();
-      this.#recorder.stop();
-    }
-
-    await this.#stopPromise;
+    window.clearInterval(this.#flushTimerId);
+    this.#flushTimerId = null;
+    this.#paused = true;
+    await this.#flushChunk(true);
     await this.#processing;
-
+    this.#processorNode.onaudioprocess = null;
+    this.#sourceNode?.disconnect();
+    this.#processorNode?.disconnect();
+    this.#silenceGainNode?.disconnect();
+    await this.#audioContext.close().catch(() => {});
     this.#track?.stop();
     this.#stream?.getTracks().forEach(track => track.stop());
+    this.#audioContext = null;
+    this.#sourceNode = null;
+    this.#processorNode = null;
+    this.#silenceGainNode = null;
     this.#track = null;
     this.#stream = null;
-    this.#recorder = null;
+    this.#chunkBuffers = [];
+    this.#chunkSampleCount = 0;
 
     return this.transcript;
   }
 
-  #queueChunk(blob) {
+  async #flushChunk(force = false) {
+    if (!this.#chunkSampleCount || !this.#audioContext) return;
+
+    const sampleRate = this.#audioContext.sampleRate;
+    const minSamples = Math.floor(sampleRate * MIN_LIVE_CHUNK_SECONDS);
+    if (!force && this.#chunkSampleCount < minSamples) return;
+
+    const samples = mergeFloat32Chunks(this.#chunkBuffers, this.#chunkSampleCount);
+    this.#chunkBuffers = [];
+    this.#chunkSampleCount = 0;
+
     const chunkIndex = ++this.#chunkIndex;
+    const blob = encodeWavFromFloat32(samples, sampleRate);
     this.#processing = this.#processing
       .then(() => this.#processChunk(blob, chunkIndex))
       .catch(error => {
@@ -225,8 +307,7 @@ class RollingTranscriptionSession {
   }
 
   async #processChunk(blob, chunkIndex) {
-    const extension = getLiveChunkMimeType().includes('mp4') ? 'm4a' : 'webm';
-    const file = blobToFile(blob, `live-transcript-${chunkIndex}.${extension}`);
+    const file = blobToFile(blob, `live-transcript-${chunkIndex}.wav`, 'audio/wav');
     const prompt = buildPrompt(this.#prompt, this.#transcript);
 
     this.#onStatus?.({ stage: 'live', message: `Transcribing live audio chunk ${chunkIndex}…` });

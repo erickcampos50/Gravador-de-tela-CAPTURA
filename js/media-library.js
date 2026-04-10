@@ -13,10 +13,20 @@ function getBaseName(fileName) {
   return fileName.replace(/\.[^.]+$/, '');
 }
 
-function isTranscriptNameFor(mediaFileName, candidateName) {
+function isTranscriptNameFor(mediaFileName, candidateName, variant = 'any') {
   const baseName = getBaseName(mediaFileName);
-  return candidateName === `${baseName}-transcript.txt`
-    || (/\.txt$/i).test(candidateName) && candidateName.startsWith(`${baseName}-transcript-`);
+  const hasTxtExtension = (/\.txt$/i).test(candidateName);
+  const finalBaseName = `${baseName}-transcript`;
+  const liveBaseName = `${baseName}-transcript-live`;
+
+  const isLiveTranscript = candidateName === `${liveBaseName}.txt`
+    || (hasTxtExtension && candidateName.startsWith(`${liveBaseName}-`));
+  const isFinalTranscript = candidateName === `${finalBaseName}.txt`
+    || (hasTxtExtension && candidateName.startsWith(`${finalBaseName}-`) && !candidateName.startsWith(`${liveBaseName}-`));
+
+  if (variant === 'live') return isLiveTranscript;
+  if (variant === 'final') return isFinalTranscript;
+  return isLiveTranscript || isFinalTranscript;
 }
 
 export function isMediaFileName(fileName) {
@@ -56,9 +66,9 @@ export class MediaLibrary {
     );
   }
 
-  async getRelatedTranscripts(mediaFileName) {
+  async getRelatedTranscripts(mediaFileName, { variant = 'any' } = {}) {
     const entries = await this.#storage.listDirectoryFileHandles();
-    const candidates = entries.filter(entry => isTranscriptNameFor(mediaFileName, entry.name));
+    const candidates = entries.filter(entry => isTranscriptNameFor(mediaFileName, entry.name, variant));
     const withMeta = await Promise.all(
       candidates.map(async entry => {
         const file = await entry.handle.getFile();
@@ -75,15 +85,18 @@ export class MediaLibrary {
     return this.#storage.readTextFile(handle);
   }
 
-  async writeTranscript(mediaFileName, transcriptText, { alwaysVersion = false } = {}) {
+  async writeTranscript(mediaFileName, transcriptText, { alwaysVersion = false, variant = 'final' } = {}) {
     const trimmed = transcriptText.trim();
     if (!trimmed) throw new Error('The transcript is empty.');
 
     const baseName = getBaseName(mediaFileName);
-    const existing = await this.getRelatedTranscripts(mediaFileName);
+    const existing = await this.getRelatedTranscripts(mediaFileName, { variant });
+    const transcriptStem = variant === 'live'
+      ? `${baseName}-transcript-live`
+      : `${baseName}-transcript`;
     const fileName = !alwaysVersion && existing.length === 0
-      ? `${baseName}-transcript.txt`
-      : `${baseName}-transcript-${dateStamp()}.txt`;
+      ? `${transcriptStem}.txt`
+      : `${transcriptStem}-${dateStamp()}.txt`;
 
     const handle = await this.#storage.writeTextFile(fileName, `${trimmed}\n`);
     return { fileName, handle };

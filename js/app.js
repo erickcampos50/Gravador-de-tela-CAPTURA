@@ -603,8 +603,17 @@ async function finalizeSavedRecordingTranscript(fileHandle) {
   setLiveTranscriptBadge('Finalizing', 'badge bg-info text-dark');
   setTranscriptionStatus('Transcribing the saved recording…', 'muted');
 
+  let preferredTranscriptName = '';
+
   try {
-    await pendingLiveStopPromise;
+    const liveText = await pendingLiveStopPromise;
+    if (liveText.trim()) {
+      const liveResult = await mediaLibrary.writeTranscript(fileHandle.name, liveText, { variant: 'live' });
+      preferredTranscriptName = liveResult.fileName;
+      setTranscriptionStatus(`Live transcript saved as ${liveResult.fileName}.`, 'success');
+      trackEvent('captura_live_transcript_saved', { transcript_name: liveResult.fileName });
+    }
+
     const result = await transcriptionController.transcribeFileHandle(fileHandle, {
       prompt: getTranscriptionPrompt(),
       onProgress: payload => {
@@ -612,6 +621,7 @@ async function finalizeSavedRecordingTranscript(fileHandle) {
       },
     });
 
+    preferredTranscriptName = result.fileName;
     showToast(`Transcript saved as ${result.fileName}.`, 'success');
     setTranscriptionStatus(`Transcript saved as ${result.fileName}.`, 'success');
     setLiveTranscriptBadge('Saved', 'badge bg-success');
@@ -619,10 +629,17 @@ async function finalizeSavedRecordingTranscript(fileHandle) {
 
     await refreshMediaLibrary({
       preferredMediaName: fileHandle.name,
-      preferredTranscriptName: result.fileName,
+      preferredTranscriptName,
       silent: true,
     });
   } catch (error) {
+    if (preferredTranscriptName) {
+      await refreshMediaLibrary({
+        preferredMediaName: fileHandle.name,
+        preferredTranscriptName,
+        silent: true,
+      }).catch(() => {});
+    }
     setLiveTranscriptBadge('Error', 'badge bg-danger');
     handleTranscriptionError(error, {
       toast: true,

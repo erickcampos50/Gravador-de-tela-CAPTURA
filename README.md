@@ -1,0 +1,134 @@
+# Captura Web Recorder
+
+Aplicação web estática para gravação de tela, áudio e webcam com salvamento direto em disco e suporte a transcrição via OpenAI.
+
+## O que a ferramenta faz
+
+- Grava tela com overlay opcional de webcam.
+- Mistura áudio do sistema e microfone com controle de ganho.
+- Salva gravações diretamente na pasta escolhida pelo usuário.
+- Lista os arquivos de áudio e vídeo da pasta selecionada.
+- Permite reproduzir o arquivo selecionado e visualizar suas transcrições relacionadas.
+- Gera transcrição do arquivo selecionado.
+- Gera transcrição em tempo real durante a gravação.
+- Salva o transcript ao vivo e a transcrição final ao lado do arquivo original.
+- Divide arquivos grandes automaticamente antes de enviar para a API da OpenAI.
+
+## Requisitos
+
+- Chrome ou Edge recentes.
+- Ambiente seguro para o navegador:
+  - `https://` em hospedagem;
+  - `http://localhost` em desenvolvimento.
+- Chave da OpenAI para usar as transcrições.
+
+## Como executar localmente
+
+Como a aplicação usa módulos ES, Service Worker e File System Access API, abra por um servidor estático, não por `file://`.
+
+Exemplo:
+
+```bash
+python3 -m http.server 4173
+```
+
+Depois acesse:
+
+```text
+http://localhost:4173
+```
+
+## Como usar
+
+### Gravação
+
+1. Clique em `Choose Folder`.
+2. Escolha a pasta onde as gravações e transcripts serão salvos.
+3. Configure webcam, microfone, formato e qualidade.
+4. Clique em `Start Recording`.
+5. Use `Pause`, `Resume`, `Stop` e `End Session` conforme necessário.
+
+### Transcrição de arquivo
+
+1. Expanda o painel `OpenAI Key`.
+2. Informe sua chave da OpenAI no campo de senha.
+3. Opcionalmente preencha `Transcription prompt`.
+4. Na lista `Files In Chosen Folder`, selecione um arquivo.
+5. Use `Transcribe Selected File` para gerar a primeira transcrição.
+6. Use `Generate New Version` para criar uma nova versão sem sobrescrever a anterior.
+
+### Live transcript
+
+1. Preencha a chave da OpenAI.
+2. Ative `Enable live transcription while recording`.
+3. Inicie a gravação.
+4. O texto parcial aparece em `Live Transcript`.
+5. Ao encerrar a gravação, a aplicação salva:
+   - o transcript ao vivo acumulado;
+   - a transcrição final do arquivo gravado.
+
+## Prompt complementar
+
+O campo `Transcription prompt` existe para melhorar a qualidade da transcrição com contexto adicional, por exemplo:
+
+- assunto esperado do áudio;
+- grafia correta de nomes, siglas e termos técnicos;
+- instruções de pontuação;
+- preservação de palavras de preenchimento;
+- estilo linguístico desejado.
+
+O último prompt fica salvo no navegador em `localStorage`.
+
+## Como os arquivos são salvos
+
+Para um arquivo `recording-2026-04-10T10-00-00.webm`, os arquivos de transcript podem ser:
+
+- `recording-2026-04-10T10-00-00-transcript.txt`
+- `recording-2026-04-10T10-00-00-transcript-live.txt`
+- `recording-2026-04-10T10-00-00-transcript-2026-04-10T10-15-00.txt`
+- `recording-2026-04-10T10-00-00-transcript-live-2026-04-10T10-15-00.txt`
+
+Regras:
+
+- a primeira transcrição final usa `-transcript.txt`;
+- o live transcript usa `-transcript-live.txt`;
+- novas versões recebem timestamp;
+- todos os arquivos ficam na mesma pasta do original.
+
+## Segurança da chave da OpenAI
+
+- A chave é digitada no formulário da própria aplicação.
+- A aplicação não salva a chave em `localStorage` nem em `IndexedDB`.
+- O Chrome pode lembrar a chave usando o gerenciador de senhas do navegador.
+- Quando você usa a transcrição, o áudio é enviado diretamente do navegador para a API da OpenAI.
+
+Isso é adequado para o cenário atual de uso pessoal, mas não para um produto público sem backend.
+
+## Limitações conhecidas
+
+- A aplicação depende de APIs específicas de navegadores Chromium.
+- Firefox não suporta o fluxo atual de gravação em disco.
+- O live transcript pode apresentar diferenças em relação à transcrição final do arquivo salvo.
+- Arquivos grandes podem levar tempo extra por causa da compressão e divisão local no navegador.
+- A listagem de mídia considera apenas a raiz da pasta escolhida.
+
+## Estrutura principal
+
+```text
+index.html
+recorder.css
+sw.js
+js/app.js
+js/recorder-api.js
+js/recorder-state-machine.js
+js/storage.js
+js/audio-mixer.js
+js/media-library.js
+js/openai-client.js
+js/transcription-controller.js
+```
+
+## Documentação adicional
+
+- Memorial técnico: [MEMORIAL-TECNICO.md](./MEMORIAL-TECNICO.md)
+
