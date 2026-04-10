@@ -1,6 +1,7 @@
-# Captura Web Recorder
+# Gravador de Reuniões
 
 Aplicação web estática para gravação de tela, áudio e webcam com salvamento direto em disco e suporte a transcrição via OpenAI.
+O projeto foi inspirado no excelente [Captura Web Recorder](https://mathewsachin.github.io/) do Mathew Sachin e também no NamoradaGPT.
 
 ## O que a ferramenta faz
 
@@ -140,6 +141,23 @@ js/media-library.js
 js/openai-client.js
 js/transcription-controller.js
 ```
+
+## Rodapé
+
+<details>
+<summary>Guia rápido de transcrição e revisão</summary>
+
+- `Texto normal`: é a transcrição mais simples e direta. Use quando o objetivo for leitura corrida.
+- `Segmentos com timestamp`: divide o texto em blocos com início e fim. É melhor para revisar trechos e localizar falas.
+- `Diarização`: tenta identificar quem falou em cada segmento. É o mais útil em reuniões com várias pessoas.
+
+Recomendação prática:
+
+- avalie o resultado final de cada modo antes de escolher o que vai arquivar;
+- quando a reunião tiver participantes múltiplos, compare a diarização com o modo de timestamp;
+- quando o áudio for limpo e o objetivo for registro rápido, o modo normal costuma ser suficiente.
+
+</details>
 
 ## Documentação adicional
 

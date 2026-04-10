@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Gravador de tela no navegador com transcrição e pós-processamento com IA.">
   <meta name="theme-color" content="#F5F5F7">
-  <title>Captura Studio</title>
+  <title>Gravador de Reuniões</title>
   <link rel="icon" href="./images/favicon.ico">
   <link rel="manifest" href="./manifest.json">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous">
@@ -19,7 +19,7 @@
 <body class="captura-body">
 
 <div id="pwa-update-bar" class="d-flex align-items-center gap-2" hidden>
-  <span><i class="fas fa-sync-alt me-1"></i>Uma nova versão do Captura está disponível.</span>
+  <span><i class="fas fa-sync-alt me-1"></i>Uma nova versão do Gravador de Reuniões está disponível.</span>
   <button id="pwa-update-btn" class="btn btn-sm btn-light flex-shrink-0">Atualizar agora</button>
   <button id="pwa-dismiss-btn" class="btn btn-sm btn-close flex-shrink-0" aria-label="Fechar"></button>
 </div>
@@ -43,8 +43,8 @@
         <i class="fas fa-wave-square"></i>
       </div>
       <div>
-        <div class="captura-brand-title">Captura Studio</div>
-        <div class="captura-brand-subtitle">Grave, transcreva e reformule</div>
+        <div class="captura-brand-title">Gravador de Reuniões</div>
+        <div class="captura-brand-subtitle">Grave, transcreva e revise reuniões</div>
       </div>
     </div>
 
@@ -57,9 +57,9 @@
   <div id="tool-main-content" class="captura-workspace">
     <div class="captura-session-header google-anno-skip">
       <div>
-        <p class="captura-panel-kicker mb-2">Espaço de captura</p>
-        <h1 class="captura-page-title">Estúdio de gravação</h1>
-        <p class="captura-page-subtitle mb-0">Grave, transcreva e reformule cada arquivo sem sair da lista.</p>
+        <p class="captura-panel-kicker mb-2">Espaço de reuniões</p>
+        <h1 class="captura-page-title">Gravador de reuniões</h1>
+        <p class="captura-page-subtitle mb-0">Grave, transcreva e revise cada reunião sem sair da lista.</p>
       </div>
     </div>
 
@@ -218,7 +218,7 @@
             <details id="openai-panel" class="captura-details">
               <summary>Chave da API da OpenAI</summary>
               <form id="openai-key-form" class="mt-3" autocomplete="on">
-                <input type="text" name="username" value="Captura OpenAI" autocomplete="username" hidden>
+                <input type="text" name="username" value="Gravador de Reuniões OpenAI" autocomplete="username" hidden>
                 <div class="input-group input-group-sm">
                   <input
                     id="openai-api-key"
@@ -432,6 +432,29 @@
         </section>
       </aside>
     </div>
+    <footer class="captura-page-footer google-anno-skip">
+      <details class="captura-details">
+        <summary>
+          <span>Como usar e interpretar a transcrição</span>
+        </summary>
+        <div class="captura-footer-content">
+          <p class="captura-side-note mb-2">
+            Inspirado no <a href="https://mathewsachin.github.io/" target="_blank" rel="noopener noreferrer">Captura Web Recorder</a> de Mathew Sachin e no NamoradaGPT.
+          </p>
+          <p class="captura-side-note mb-3">
+            O modo <strong>normal</strong> entrega apenas o texto corrido. O modo <strong>segmentado</strong> organiza a fala por trechos com <strong>timestamp</strong>, e o modo <strong>diarizado</strong> separa os trechos por <strong>speaker</strong> quando a resposta estruturada estiver disponível.
+          </p>
+          <ul class="captura-footer-list mb-3">
+            <li><strong>Normal:</strong> útil para leitura rápida e pós-processamento simples.</li>
+            <li><strong>Segmentado:</strong> melhor para revisar o que foi dito em cada faixa de tempo.</li>
+            <li><strong>Diarizado:</strong> melhor para reuniões com vários participantes identificáveis.</li>
+          </ul>
+          <p class="captura-side-note mb-0">
+            Vale avaliar o resultado final de cada modo antes de compartilhar, resumir ou salvar a versão definitiva.
+          </p>
+        </div>
+      </details>
+    </footer>
     </div>
 </main>
 

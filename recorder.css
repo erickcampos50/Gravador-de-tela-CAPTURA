@@ -919,6 +919,22 @@ body.captura-body ::selection {
   transform: rotate(180deg);
 }
 
+.captura-page-footer {
+  margin-top: 24px;
+}
+
+.captura-footer-content {
+  padding-top: 14px;
+}
+
+.captura-footer-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--captura-text-muted);
+  display: grid;
+  gap: 8px;
+}
+
 .captura-engine-actions {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

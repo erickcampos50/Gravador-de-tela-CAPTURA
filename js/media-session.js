@@ -4,7 +4,7 @@
 export function setupMediaSession(onPlay, onPause, onStop) {
   if (!navigator.mediaSession) return;
   navigator.mediaSession.metadata = new MediaMetadata({
-    title:   'Captura Web',
+    title:   'Gravador de Reuniões',
     artist:  'Recording Session Active',
     artwork: [{ src: new URL('./images/captura.png', location.href).href, sizes: '512x512', type: 'image/png' }],
   });

@@ -2,7 +2,7 @@
 
 ## Visão geral
 
-O projeto é uma aplicação web estática orientada a Chromium para captura de tela, mixagem de áudio, gravação em disco e transcrição com OpenAI. O design prioriza:
+O Gravador de Reuniões é uma aplicação web estática orientada a Chromium para captura de tela, mixagem de áudio, gravação em disco e transcrição com OpenAI. O projeto foi inspirado no excelente [Captura Web Recorder](https://mathewsachin.github.io/) do Mathew Sachin e também no NamoradaGPT. O design prioriza:
 
 - operação local;
 - ausência de backend próprio;

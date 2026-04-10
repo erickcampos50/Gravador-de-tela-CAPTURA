@@ -1,7 +1,7 @@
 {
-  "name": "Captura Web Recorder",
-  "short_name": "Captura",
-  "description": "Browser-based screen recorder with webcam overlay and audio mixing.",
+  "name": "Gravador de Reuniões",
+  "short_name": "Reuniões",
+  "description": "Gravador de reuniões no navegador com webcam, áudio e transcrição com IA.",
   "display": "standalone",
   "start_url": "./",
   "scope": "./",
