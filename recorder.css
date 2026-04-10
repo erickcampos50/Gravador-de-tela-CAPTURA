@@ -73,6 +73,75 @@
   text-decoration: underline;
 }
 
+.captura-details {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+}
+
+.captura-details summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.captura-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.captura-file-list {
+  max-height: 38rem;
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+}
+
+.captura-file-list .list-group-item {
+  background: rgba(255, 255, 255, 0.03);
+  color: #e9ecef;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.captura-file-list .list-group-item.active {
+  background: rgba(13, 202, 240, 0.2);
+  border-color: rgba(13, 202, 240, 0.45);
+  color: #fff;
+}
+
+.captura-preview-shell {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 0.9rem;
+}
+
+.captura-preview-placeholder {
+  min-height: 7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.captura-inline-status {
+  min-height: 1.25rem;
+}
+
+.capturatranscript-textarea {
+  min-height: 12rem;
+  resize: vertical;
+  background: rgba(255, 255, 255, 0.03);
+  color: #e9ecef;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.capturatranscript-textarea::placeholder {
+  color: rgba(233, 236, 239, 0.6);
+}
+
 /* ── PWA update notification — fixed floating bar at top ─────────────────── */
 #pwa-update-bar {
   position: fixed;

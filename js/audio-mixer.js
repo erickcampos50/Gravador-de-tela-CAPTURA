@@ -14,6 +14,7 @@ export class AudioMixer {
   // Recording audio graph
   #audioCtx      = null;
   #audioDestNode = null;
+  #mixedStream   = null;
   #micGainNode   = null;
   #sysGainNode   = null;
   #micAnalyser   = null;
@@ -48,6 +49,7 @@ export class AudioMixer {
   get micAnalyser() { return this.#micAnalyser; }
   get sysAnalyser() { return this.#sysAnalyser; }
   get isMicMuted()  { return this.#micMuted; }
+  get mixedStream() { return this.#mixedStream; }
 
   // ── Audio mixing ─────────────────────────────────────────────────────────────
 
@@ -56,6 +58,7 @@ export class AudioMixer {
   buildMix(sysAudioTracks, micStream, micGainValue, sysGainValue) {
     this.#audioCtx      = new AudioContext();
     this.#audioDestNode = this.#audioCtx.createMediaStreamDestination();
+    this.#mixedStream   = this.#audioDestNode.stream;
     this.#micGainValue  = micGainValue;
     this.#micMuted      = false;
 
@@ -84,7 +87,7 @@ export class AudioMixer {
     }
 
     this.startMeterAnimation();
-    return this.#audioDestNode.stream;
+    return this.#mixedStream;
   }
 
   // Live gain control — callable while a recording is active.
@@ -102,9 +105,16 @@ export class AudioMixer {
   // Preview state is intentionally left intact.
   teardownMix() {
     if (this.#audioCtx) { this.#audioCtx.close(); this.#audioCtx = null; }
+    this.#mixedStream?.getTracks().forEach(track => track.stop());
+    this.#mixedStream = null;
     this.#micGainNode = this.#sysGainNode = null;
     this.#micAnalyser = this.#sysAnalyser = null;
     this.#micMuted = false;
+  }
+
+  getMixedTrackClone() {
+    const track = this.#mixedStream?.getAudioTracks?.()[0] ?? null;
+    return track ? track.clone() : null;
   }
 
   // ── macOS Core Audio / Media Session workaround ──────────────────────────────

@@ -88,44 +88,73 @@ export class StorageManager {
       this.#dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
       this.#updateDirUI();
       await this.#persistHandle();
+      return true;
     } catch (err) {
       if (err.name !== 'AbortError') {
         this.#onError('Folder Error', 'Could not select folder: ' + err.message);
       }
+      return false;
     }
   }
 
   // Ensures a writable directory is available, prompting if needed.
   // Returns true when the caller may proceed, false when access was denied or
   // the user cancelled the picker.
-  async ensureAccess() {
+  async ensureAccess({ mode = 'readwrite', silent = false, requestIfNeeded = true } = {}) {
     if (!this.#dirHandle) {
       try {
         this.#dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
         this.#updateDirUI();
         await this.#persistHandle();
       } catch (err) {
-        if (err.name !== 'AbortError') {
+        if (!silent && err.name !== 'AbortError') {
           this.#onError('Folder Error', 'Could not select a save folder: ' + err.message);
         }
         return false;
       }
     }
 
-    let perm = await this.#dirHandle.queryPermission({ mode: 'readwrite' });
-    if (perm !== 'granted') {
-      try { perm = await this.#dirHandle.requestPermission({ mode: 'readwrite' }); }
+    let perm = await this.#dirHandle.queryPermission({ mode });
+    if (perm !== 'granted' && requestIfNeeded) {
+      try { perm = await this.#dirHandle.requestPermission({ mode }); }
       catch (_) { perm = 'denied'; }
     }
     if (perm !== 'granted') {
-      this.#onError(
-        'Permission Denied',
-        'Write permission for the save folder was denied. ' +
-        'Please choose a different folder with the "Choose Folder" button.'
-      );
+      if (!silent) {
+        this.#onError(
+          'Permission Denied',
+          mode === 'readwrite'
+            ? 'Write permission for the save folder was denied. Please choose a different folder with the "Choose Folder" button.'
+            : 'Read permission for the selected folder was denied. Please choose a folder that can be read.'
+        );
+      }
       return false;
     }
     return true;
+  }
+
+  async listDirectoryFileHandles() {
+    if (!this.#dirHandle) return [];
+
+    const files = [];
+    for await (const [name, handle] of this.#dirHandle.entries()) {
+      if (handle.kind === 'file') files.push({ name, handle });
+    }
+    return files.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  }
+
+  async readTextFile(handle) {
+    const file = await handle.getFile();
+    return file.text();
+  }
+
+  async writeTextFile(fileName, contents) {
+    if (!this.#dirHandle) throw new Error('No folder selected.');
+    const fileHandle = await this.#dirHandle.getFileHandle(fileName, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(contents);
+    await writable.close();
+    return fileHandle;
   }
 
   // ── Private helpers ──────────────────────────────────────────────────────────

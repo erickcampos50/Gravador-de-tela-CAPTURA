@@ -12,6 +12,10 @@ export const PREFS = {
   mic:      'captura-mic',
   micGain:  'captura-micGain',
   sysGain:  'captura-sysGain',
+  liveTranscriptionEnabled: 'captura-liveTranscriptionEnabled',
+  transcriptionPrompt:      'captura-transcriptionPrompt',
+  openAiPanelOpen:          'captura-openAiPanelOpen',
+  transcriptionPanelOpen:   'captura-transcriptionPanelOpen',
 };
 
 export const savePref = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };

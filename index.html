@@ -188,6 +188,142 @@
   </div><!-- /.card-body -->
 </div><!-- /.card -->
 
+<div id="transcription-ui" class="card mb-4 google-anno-skip">
+  <div class="card-body">
+    <div class="row g-4">
+      <div class="col-lg-4">
+        <details id="openai-panel" class="captura-details">
+          <summary class="fw-semibold">OpenAI Key</summary>
+          <form id="openai-key-form" class="mt-3" autocomplete="on">
+            <input type="text" name="username" value="Captura OpenAI" autocomplete="username" hidden>
+            <label class="form-label text-muted small mb-1" for="openai-api-key">API key</label>
+            <div class="input-group input-group-sm">
+              <input
+                id="openai-api-key"
+                name="password"
+                type="password"
+                class="form-control"
+                autocomplete="current-password"
+                placeholder="sk-..."
+                spellcheck="false"
+              >
+              <button id="openai-api-key-toggle" type="button" class="btn btn-outline-secondary">Show</button>
+            </div>
+            <p class="text-muted small mb-0 mt-2">
+              The key stays only in this browser session. Chrome can optionally remember it through its password manager. When you run a transcription, the selected audio is sent directly from this browser to the OpenAI API.
+            </p>
+          </form>
+        </details>
+
+        <details id="transcription-settings-panel" class="captura-details mt-3">
+          <summary class="fw-semibold">Transcription Settings</summary>
+          <div class="mt-3">
+            <div class="form-check form-switch mb-3">
+              <input class="form-check-input" type="checkbox" id="live-transcription-chk">
+              <label class="form-check-label small" for="live-transcription-chk">Enable live transcription while recording</label>
+            </div>
+
+            <label class="form-label text-muted small mb-1" for="transcription-prompt">
+              Optional prompt for better transcript quality
+            </label>
+            <textarea
+              id="transcription-prompt"
+              class="form-control form-control-sm"
+              rows="7"
+              placeholder="Use context, preferred spellings, acronyms, punctuation style, filler words, or the expected topic."
+            ></textarea>
+            <p class="text-muted small mt-2 mb-0">
+              The last prompt is saved locally and reused for live updates, saved recordings, and selected files.
+            </p>
+          </div>
+        </details>
+
+        <div class="mt-3">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <h6 class="mb-0">Live Transcript</h6>
+            <span id="live-transcript-badge" class="badge bg-secondary">Inactive</span>
+          </div>
+          <div id="transcription-status" class="captura-inline-status text-muted small mb-2">No transcription running.</div>
+          <textarea
+            id="live-transcript-output"
+            class="form-control form-control-sm capturatranscript-textarea"
+            rows="12"
+            readonly
+            placeholder="Live transcript updates will appear here during recording."
+          ></textarea>
+        </div>
+      </div>
+
+      <div class="col-lg-8">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+          <div>
+            <h6 class="mb-1">Files In Chosen Folder</h6>
+            <p id="library-summary" class="text-muted small mb-0">Select a folder to browse audio and video files.</p>
+          </div>
+          <button id="refresh-library-btn" class="btn btn-sm btn-outline-secondary">
+            <i class="fas fa-rotate-right me-1"></i>Refresh File List
+          </button>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-md-4">
+            <div id="media-file-list" class="list-group captura-file-list" aria-label="Media files in selected folder"></div>
+          </div>
+
+          <div class="col-md-8">
+            <div class="captura-preview-shell mb-3">
+              <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                <span id="selected-media-label" class="fw-semibold text-truncate">No file selected</span>
+                <span id="selected-media-kind" class="badge bg-secondary">Idle</span>
+              </div>
+
+              <video id="selected-video-player" class="w-100" controls hidden></video>
+              <audio id="selected-audio-player" class="w-100" controls hidden></audio>
+              <div id="media-preview-placeholder" class="captura-preview-placeholder text-muted small">
+                Select a file from the chosen folder to preview it and inspect the related transcript.
+              </div>
+            </div>
+
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+              <h6 class="mb-0">Related Transcript</h6>
+              <div class="d-flex gap-2 flex-wrap">
+                <button id="transcribe-selected-btn" class="btn btn-sm btn-info text-white" disabled>
+                  <i class="fas fa-wave-square me-1"></i>Transcribe Selected File
+                </button>
+                <button id="transcribe-new-version-btn" class="btn btn-sm btn-outline-info" disabled>
+                  <i class="fas fa-copy me-1"></i>Generate New Version
+                </button>
+              </div>
+            </div>
+
+            <div class="row g-2 align-items-end mb-2">
+              <div class="col-sm-6">
+                <label class="form-label text-muted small mb-1" for="transcript-version-select">Transcript version</label>
+                <select id="transcript-version-select" class="form-select form-select-sm" disabled>
+                  <option value="">No transcript yet</option>
+                </select>
+              </div>
+              <div class="col-sm-6">
+                <div id="selected-transcript-status" class="captura-inline-status text-muted small">
+                  Pick a file to load its transcript.
+                </div>
+              </div>
+            </div>
+
+            <textarea
+              id="transcript-viewer"
+              class="form-control form-control-sm capturatranscript-textarea"
+              rows="14"
+              readonly
+              placeholder="The selected transcript will be displayed here."
+            ></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ── About ─────────────────────────────────────────────────────────────── -->
 <div id="captura-about" class="card google-anno-skip">
   <div class="card-body">
@@ -195,7 +331,7 @@
     <p class="mb-2">
       A browser-based screen recorder inspired by the original Captura desktop app.
       Record your screen, mix in webcam and microphone audio, and save the result — all entirely
-      inside your browser. <strong>No data is ever sent to any server.</strong>
+      inside your browser. <strong>Recording stays local; only files or live audio sent for transcription leave the browser.</strong>
     </p>
 
     <h6 class="mt-3">Limitations vs. native desktop apps</h6>
@@ -241,8 +377,7 @@
 
     <div class="alert alert-info mb-0 py-2">
       <i class="fas fa-shield-alt me-1"></i>
-      <strong>Privacy:</strong> This tool runs 100% in your browser. No video, audio, or metadata
-      is ever uploaded or transmitted anywhere.
+      <strong>Privacy:</strong> Recording and saving remain local. If you use transcription, the selected audio is transmitted directly from this browser to the OpenAI API so a transcript can be generated.
     </div>
   </div>
 </div>
@@ -426,6 +561,7 @@
     </p>
   </div>
 </div>
+
 
     </div>
   </div>

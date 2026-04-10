@@ -7,33 +7,39 @@
 //   • Manage the elapsed-time timer and OS media session.
 //   • Enumerate devices, manage preferences, and bootstrap the page.
 
-import { AudioMixer }                          from './audio-mixer.js';
-import { Compositor }                          from './compositor.js';
-import { Metronome }                           from './metronome.js';
-import { StorageManager }                      from './storage.js';
-import { RecorderCore }                        from './recorder-core.js';
-import { PREFS, savePref, loadPref }           from './prefs.js';
+import { AudioMixer }                            from './audio-mixer.js';
+import { Compositor }                            from './compositor.js';
+import { Metronome }                             from './metronome.js';
+import { StorageManager }                        from './storage.js';
+import { RecorderCore }                          from './recorder-core.js';
+import { PREFS, savePref, loadPref }             from './prefs.js';
 import { showAlert, showToast, showErrorDialog } from './dialogs.js';
 import { setupMediaSession, clearMediaSession }  from './media-session.js';
-import { registerServiceWorker }               from './register-service-worker.js';
-import { RecorderAPI }                         from './recorder-api.js';
-import { RecorderStateMachine, STATE, EVENT }  from './recorder-state-machine.js';
-import { trackEvent }                          from './analytics.js';
+import { registerServiceWorker }                 from './register-service-worker.js';
+import { RecorderAPI }                           from './recorder-api.js';
+import { RecorderStateMachine, STATE, EVENT }    from './recorder-state-machine.js';
+import { trackEvent }                            from './analytics.js';
+import { MediaLibrary, isVideoFileName }         from './media-library.js';
+import { OpenAIClientManager, OpenAIConfigError } from './openai-client.js';
+import { TranscriptionController }               from './transcription-controller.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const BLOB_URL_REVOKE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-const FORMAT_MP3                = 'mp3-audio-only';
-const AUDIO_BITRATE             = 128_000;
-const VIDEO_BITRATES            = { '480': 2_000_000, '720': 4_000_000, '1080': 8_000_000 };
-const ONE_HOUR_SECONDS          = 60 * 60;
+const FORMAT_MP3                 = 'mp3-audio-only';
+const AUDIO_BITRATE              = 128_000;
+const VIDEO_BITRATES             = { '480': 2_000_000, '720': 4_000_000, '1080': 8_000_000 };
+const ONE_HOUR_SECONDS           = 60 * 60;
+const STATUS_CLASS = {
+  muted:   'text-muted',
+  success: 'text-success',
+  warning: 'text-warning',
+  danger:  'text-danger',
+};
 
 // ── Formatters ─────────────────────────────────────────────────────────────────
 
-// Format a gain multiplier (0–2) as a percentage string, e.g. 1.0 → '100%', 0.5 → '50%'.
 const gainPct = v => Math.round(parseFloat(v) * 100) + '%';
-
-// Format elapsed seconds as MM:SS, e.g. 65 → '01:05'.
 const fmtTime = s => String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
 const fmtBytes = bytes => {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
@@ -51,6 +57,8 @@ const isMp3Format = format => format === FORMAT_MP3;
 
 // ── DOM refs ───────────────────────────────────────────────────────────────────
 
+const recorderUi     = document.getElementById('recorder-ui');
+const transcriptionUi = document.getElementById('transcription-ui');
 const canvas         = document.getElementById('recorder-canvas');
 const webcamSel      = document.getElementById('webcam-select');
 const micSel         = document.getElementById('mic-select');
@@ -78,10 +86,34 @@ const micLevelCanvas = document.getElementById('mic-level-canvas');
 const sysLevelCanvas = document.getElementById('sys-level-canvas');
 const errorDialog    = document.getElementById('captura-error-dialog');
 
+const openAiPanel            = document.getElementById('openai-panel');
+const transcriptionPanel     = document.getElementById('transcription-settings-panel');
+const openAiKeyForm          = document.getElementById('openai-key-form');
+const openAiApiKeyInput      = document.getElementById('openai-api-key');
+const openAiApiKeyToggleBtn  = document.getElementById('openai-api-key-toggle');
+const liveTranscriptionChk   = document.getElementById('live-transcription-chk');
+const transcriptionPromptEl  = document.getElementById('transcription-prompt');
+const transcriptionStatusEl  = document.getElementById('transcription-status');
+const liveTranscriptOutputEl = document.getElementById('live-transcript-output');
+const liveTranscriptBadgeEl  = document.getElementById('live-transcript-badge');
+const refreshLibraryBtn      = document.getElementById('refresh-library-btn');
+const mediaFileListEl        = document.getElementById('media-file-list');
+const librarySummaryEl       = document.getElementById('library-summary');
+const selectedMediaLabelEl   = document.getElementById('selected-media-label');
+const selectedMediaKindEl    = document.getElementById('selected-media-kind');
+const selectedVideoPlayerEl  = document.getElementById('selected-video-player');
+const selectedAudioPlayerEl  = document.getElementById('selected-audio-player');
+const mediaPreviewPlaceholderEl = document.getElementById('media-preview-placeholder');
+const transcribeSelectedBtn  = document.getElementById('transcribe-selected-btn');
+const transcribeNewVersionBtn = document.getElementById('transcribe-new-version-btn');
+const transcriptVersionSel   = document.getElementById('transcript-version-select');
+const selectedTranscriptStatusEl = document.getElementById('selected-transcript-status');
+const transcriptViewerEl     = document.getElementById('transcript-viewer');
+
 // ── Capability checks ──────────────────────────────────────────────────────────
 
 const hasGetDisplayMedia = !!(navigator.mediaDevices?.getDisplayMedia);
-const hasFSA = typeof window.showDirectoryPicker === 'function';
+const hasFSA             = typeof window.showDirectoryPicker === 'function';
 
 // ── Engine instances ───────────────────────────────────────────────────────────
 
@@ -89,10 +121,28 @@ const compositor = new Compositor(canvas, {
   onPipMoved: (x, y) => { savePref(PREFS.pipX, x); savePref(PREFS.pipY, y); },
 });
 
-const metronome    = new Metronome();
-const audioMixer   = new AudioMixer(micLevelCanvas, sysLevelCanvas);
-const storage      = new StorageManager(dirNameEl, showErrorDialog);
-const recorderCore = new RecorderCore();
+const metronome      = new Metronome();
+const audioMixer     = new AudioMixer(micLevelCanvas, sysLevelCanvas);
+const storage        = new StorageManager(dirNameEl, showErrorDialog);
+const recorderCore   = new RecorderCore();
+const openAiClient   = new OpenAIClientManager(openAiApiKeyInput);
+const mediaLibrary   = new MediaLibrary(storage);
+const transcriptionController = new TranscriptionController({
+  clientManager: openAiClient,
+  mediaLibrary,
+  onLiveUpdate: ({ text }) => {
+    liveTranscriptOutputEl.value = text;
+    setTranscriptionStatus('Live transcript updated.', 'success');
+    setLiveTranscriptBadge('Listening', 'badge bg-success');
+  },
+  onStatus: payload => {
+    if (payload?.message) setTranscriptionStatus(payload.message, 'muted');
+  },
+  onError: error => {
+    setTranscriptionStatus(error.message || 'Live transcription failed.', 'danger');
+    setLiveTranscriptBadge('Error', 'badge bg-danger');
+  },
+});
 
 // ── API + state machine ────────────────────────────────────────────────────────
 
@@ -102,10 +152,19 @@ const api = new RecorderAPI({
 
 const machine = new RecorderStateMachine(api);
 
-// ── Timer state ────────────────────────────────────────────────────────────────
+// ── UI state ───────────────────────────────────────────────────────────────────
 
-let elapsedSecs     = 0;
-let timerIntervalId = null;
+let elapsedSecs               = 0;
+let timerIntervalId           = null;
+let libraryEntries            = [];
+let selectedMediaEntry        = null;
+let selectedTranscriptEntries = [];
+let selectedPreviewUrl        = null;
+let pendingLiveStopPromise    = Promise.resolve('');
+let recordingTranscriptInFlight = false;
+let transcriptionBusy         = false;
+
+// ── Timer state ────────────────────────────────────────────────────────────────
 
 function startTimer() {
   clearInterval(timerIntervalId);
@@ -141,28 +200,459 @@ function resetTimer() {
   updateRecordingEstimate();
 }
 
+// ── UI helpers ────────────────────────────────────────────────────────────────
+
+function setInlineStatus(el, message, tone = 'muted') {
+  if (!el) return;
+  el.textContent = message;
+  el.className = `captura-inline-status small ${STATUS_CLASS[tone] || STATUS_CLASS.muted}`;
+}
+
+function setTranscriptionStatus(message, tone = 'muted') {
+  setInlineStatus(transcriptionStatusEl, message, tone);
+}
+
+function setSelectedTranscriptStatus(message, tone = 'muted') {
+  setInlineStatus(selectedTranscriptStatusEl, message, tone);
+}
+
+function setLiveTranscriptBadge(label, className) {
+  liveTranscriptBadgeEl.textContent = label;
+  liveTranscriptBadgeEl.className = className;
+}
+
+function openOpenAiPanel() {
+  openAiPanel.open = true;
+  savePref(PREFS.openAiPanelOpen, 'true');
+}
+
+function getTranscriptionPrompt() {
+  return transcriptionPromptEl.value.trim();
+}
+
+function isLiveTranscriptionEnabled() {
+  return liveTranscriptionChk.checked;
+}
+
+function revokeSelectedPreviewUrl() {
+  if (!selectedPreviewUrl) return;
+  URL.revokeObjectURL(selectedPreviewUrl);
+  selectedPreviewUrl = null;
+}
+
+function resetMediaPreview() {
+  revokeSelectedPreviewUrl();
+  [selectedVideoPlayerEl, selectedAudioPlayerEl].forEach(mediaEl => {
+    mediaEl.pause();
+    mediaEl.removeAttribute('src');
+    mediaEl.load();
+    mediaEl.hidden = true;
+  });
+  mediaPreviewPlaceholderEl.hidden = false;
+}
+
+function clearTranscriptViewer(message = 'The selected transcript will be displayed here.') {
+  transcriptViewerEl.value = '';
+  transcriptViewerEl.placeholder = message;
+}
+
+function clearSelectedMediaState(message = 'Select a file from the chosen folder to preview it and inspect the related transcript.') {
+  selectedMediaEntry = null;
+  selectedTranscriptEntries = [];
+  selectedMediaLabelEl.textContent = 'No file selected';
+  selectedMediaKindEl.textContent = 'Idle';
+  selectedMediaKindEl.className = 'badge bg-secondary';
+  resetMediaPreview();
+  mediaPreviewPlaceholderEl.textContent = message;
+  transcriptVersionSel.innerHTML = '<option value="">No transcript yet</option>';
+  transcriptVersionSel.disabled = true;
+  clearTranscriptViewer();
+  setSelectedTranscriptStatus('Pick a file to load its transcript.', 'muted');
+}
+
+function buildMediaListItem(entry) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'list-group-item list-group-item-action';
+  button.dataset.name = entry.name;
+
+  const top = document.createElement('div');
+  top.className = 'd-flex align-items-center justify-content-between gap-2';
+
+  const name = document.createElement('span');
+  name.className = 'text-truncate';
+  name.textContent = entry.name;
+
+  const badge = document.createElement('span');
+  badge.className = entry.kind === 'video' ? 'badge bg-primary' : 'badge bg-secondary';
+  badge.textContent = entry.kind === 'video' ? 'Video' : 'Audio';
+
+  top.append(name, badge);
+
+  const bottom = document.createElement('div');
+  bottom.className = 'd-flex align-items-center justify-content-between gap-2 mt-1';
+
+  const transcriptLabel = document.createElement('small');
+  transcriptLabel.className = 'text-muted';
+  transcriptLabel.textContent = entry.transcriptCount
+    ? `${entry.transcriptCount} transcript${entry.transcriptCount === 1 ? '' : 's'}`
+    : 'No transcript yet';
+
+  bottom.append(transcriptLabel);
+  button.append(top, bottom);
+  return button;
+}
+
+function renderMediaFileList() {
+  mediaFileListEl.replaceChildren();
+
+  if (!libraryEntries.length) {
+    const empty = document.createElement('div');
+    empty.className = 'list-group-item text-muted small';
+    empty.textContent = storage.dirHandle
+      ? 'No supported audio or video files were found in the selected folder root.'
+      : 'Choose a folder to list its audio and video files.';
+    mediaFileListEl.appendChild(empty);
+    return;
+  }
+
+  libraryEntries.forEach(entry => {
+    const item = buildMediaListItem(entry);
+    item.disabled = transcriptionBusy;
+    if (selectedMediaEntry?.name === entry.name) item.classList.add('active');
+    item.addEventListener('click', () => {
+      void selectMediaEntryByName(entry.name);
+    });
+    mediaFileListEl.appendChild(item);
+  });
+}
+
+function updateLibrarySummary() {
+  if (!storage.dirHandle) {
+    librarySummaryEl.textContent = 'Select a folder to browse audio and video files.';
+    return;
+  }
+
+  if (!libraryEntries.length) {
+    librarySummaryEl.textContent = `No supported media files found in ${storage.dirHandle.name}.`;
+    return;
+  }
+
+  librarySummaryEl.textContent = `${libraryEntries.length} media file${libraryEntries.length === 1 ? '' : 's'} found in ${storage.dirHandle.name}.`;
+}
+
+function handleTranscriptionError(error, {
+  toast = true,
+  dialog = false,
+  updateTranscriptPane = false,
+  updateLivePane = true,
+} = {}) {
+  const title = error?.title || 'Transcription Error';
+  const message = error?.message || String(error ?? 'Unknown transcription error.');
+
+  if (updateLivePane) setTranscriptionStatus(message, 'danger');
+  if (updateTranscriptPane) setSelectedTranscriptStatus(message, 'danger');
+
+  if (toast) showToast(message, 'danger');
+  if (dialog) showErrorDialog(title, message);
+  if (error instanceof OpenAIConfigError) openOpenAiPanel();
+}
+
+async function loadMediaPreview(mediaEntry) {
+  resetMediaPreview();
+  if (!mediaEntry) return;
+
+  const file = await mediaEntry.handle.getFile();
+  selectedPreviewUrl = URL.createObjectURL(file);
+
+  const target = isVideoFileName(mediaEntry.name) ? selectedVideoPlayerEl : selectedAudioPlayerEl;
+  target.src = selectedPreviewUrl;
+  target.hidden = false;
+  mediaPreviewPlaceholderEl.hidden = true;
+}
+
+async function loadTranscriptEntries(mediaFileName, preferredTranscriptName = '') {
+  selectedTranscriptEntries = await mediaLibrary.getRelatedTranscripts(mediaFileName);
+  transcriptVersionSel.replaceChildren();
+
+  if (!selectedTranscriptEntries.length) {
+    transcriptVersionSel.add(new Option('No transcript yet', ''));
+    transcriptVersionSel.disabled = true;
+    clearTranscriptViewer('This file does not have a saved transcript yet.');
+    setSelectedTranscriptStatus('No transcript saved for this file yet.', 'muted');
+    return;
+  }
+
+  selectedTranscriptEntries.forEach(entry => {
+    transcriptVersionSel.add(new Option(entry.name, entry.name));
+  });
+  transcriptVersionSel.disabled = false;
+
+  const preferred = selectedTranscriptEntries.find(entry => entry.name === preferredTranscriptName);
+  transcriptVersionSel.value = preferred?.name || selectedTranscriptEntries[0].name;
+  await loadSelectedTranscript();
+}
+
+async function loadSelectedTranscript() {
+  const transcriptName = transcriptVersionSel.value;
+  const transcriptEntry = selectedTranscriptEntries.find(entry => entry.name === transcriptName);
+
+  if (!transcriptEntry) {
+    clearTranscriptViewer('This file does not have a saved transcript yet.');
+    setSelectedTranscriptStatus('No transcript saved for this file yet.', 'muted');
+    return;
+  }
+
+  const transcriptText = await mediaLibrary.readTranscript(transcriptEntry.handle);
+  transcriptViewerEl.value = transcriptText;
+  setSelectedTranscriptStatus(`Showing ${transcriptEntry.name}.`, 'success');
+}
+
+async function selectMediaEntryByName(mediaName, preferredTranscriptName = '') {
+  const entry = libraryEntries.find(item => item.name === mediaName);
+  if (!entry) return;
+
+  selectedMediaEntry = entry;
+  renderMediaFileList();
+  selectedMediaLabelEl.textContent = entry.name;
+  selectedMediaKindEl.textContent = entry.kind === 'video' ? 'Video' : 'Audio';
+  selectedMediaKindEl.className = entry.kind === 'video' ? 'badge bg-primary' : 'badge bg-secondary';
+
+  try {
+    await loadMediaPreview(entry);
+    await loadTranscriptEntries(entry.name, preferredTranscriptName);
+  } catch (error) {
+    clearTranscriptViewer();
+    setSelectedTranscriptStatus('Could not load the selected file.', 'danger');
+    handleTranscriptionError(error, { toast: true, dialog: false, updateLivePane: false });
+  }
+
+  render(machine.state);
+}
+
+async function refreshMediaLibrary({
+  preferredMediaName = selectedMediaEntry?.name || '',
+  preferredTranscriptName = '',
+  silent = false,
+} = {}) {
+  if (!storage.dirHandle) {
+    libraryEntries = [];
+    clearSelectedMediaState();
+    renderMediaFileList();
+    updateLibrarySummary();
+    render(machine.state);
+    return;
+  }
+
+  const dirOk = await storage.ensureAccess({
+    mode: 'readwrite',
+    silent,
+    requestIfNeeded: !silent,
+  });
+  if (!dirOk) return;
+
+  libraryEntries = await mediaLibrary.listMediaFiles();
+  updateLibrarySummary();
+  renderMediaFileList();
+
+  if (!libraryEntries.length) {
+    clearSelectedMediaState('No supported audio or video files were found in the selected folder root.');
+    render(machine.state);
+    return;
+  }
+
+  const nextMediaName = libraryEntries.some(entry => entry.name === preferredMediaName)
+    ? preferredMediaName
+    : libraryEntries[0].name;
+  await selectMediaEntryByName(nextMediaName, preferredTranscriptName);
+}
+
+async function transcribeSelectedMedia({ alwaysVersion = false } = {}) {
+  if (!selectedMediaEntry) return;
+  const mediaName = selectedMediaEntry.name;
+  const mediaHandle = selectedMediaEntry.handle;
+
+  try {
+    openAiClient.assertConfigured();
+  } catch (error) {
+    handleTranscriptionError(error, {
+      toast: false,
+      dialog: true,
+      updateTranscriptPane: true,
+      updateLivePane: true,
+    });
+    return;
+  }
+
+  trackEvent('captura_transcription_start', { file_name: mediaName, force_new_version: alwaysVersion });
+  transcriptionBusy = true;
+  renderMediaFileList();
+  render(machine.state);
+  setSelectedTranscriptStatus(`Preparing ${mediaName} for transcription…`, 'muted');
+  setTranscriptionStatus(`Preparing ${mediaName} for transcription…`, 'muted');
+
+  try {
+    const result = await transcriptionController.transcribeFileHandle(mediaHandle, {
+      prompt: getTranscriptionPrompt(),
+      alwaysVersion,
+      onProgress: payload => {
+        if (payload?.message) {
+          setSelectedTranscriptStatus(payload.message, 'muted');
+          setTranscriptionStatus(payload.message, 'muted');
+        }
+      },
+    });
+
+    showToast(`Transcript saved as ${result.fileName}.`, 'success');
+    setSelectedTranscriptStatus(`Transcript saved as ${result.fileName}.`, 'success');
+    setTranscriptionStatus(`Transcript saved as ${result.fileName}.`, 'success');
+    trackEvent('captura_transcription_saved', { file_name: mediaName, transcript_name: result.fileName });
+    await refreshMediaLibrary({
+      preferredMediaName: mediaName,
+      preferredTranscriptName: result.fileName,
+      silent: true,
+    });
+  } catch (error) {
+    trackEvent('captura_transcription_error', { file_name: mediaName });
+    handleTranscriptionError(error, {
+      toast: true,
+      dialog: false,
+      updateTranscriptPane: true,
+      updateLivePane: true,
+    });
+  } finally {
+    transcriptionBusy = false;
+    renderMediaFileList();
+    render(machine.state);
+  }
+}
+
+async function startLiveTranscriptionForRecording() {
+  if (!isLiveTranscriptionEnabled()) {
+    setLiveTranscriptBadge('Inactive', 'badge bg-secondary');
+    return;
+  }
+
+  try {
+    openAiClient.assertConfigured();
+  } catch (error) {
+    setLiveTranscriptBadge('Key Needed', 'badge bg-danger');
+    handleTranscriptionError(error, {
+      toast: false,
+      dialog: true,
+      updateTranscriptPane: false,
+      updateLivePane: true,
+    });
+    return;
+  }
+
+  const track = audioMixer.getMixedTrackClone();
+  if (!track) {
+    setLiveTranscriptBadge('No Audio', 'badge bg-secondary');
+    setTranscriptionStatus('Live transcription skipped because this recording has no active audio source.', 'warning');
+    return;
+  }
+
+  liveTranscriptOutputEl.value = '';
+  setLiveTranscriptBadge('Starting', 'badge bg-info text-dark');
+  setTranscriptionStatus('Starting live transcription…', 'muted');
+
+  try {
+    await transcriptionController.startLiveTranscription({
+      track,
+      prompt: getTranscriptionPrompt(),
+    });
+    setLiveTranscriptBadge('Listening', 'badge bg-success');
+    trackEvent('captura_live_transcription_start');
+  } catch (error) {
+    track.stop();
+    setLiveTranscriptBadge('Error', 'badge bg-danger');
+    handleTranscriptionError(error, {
+      toast: true,
+      dialog: false,
+      updateTranscriptPane: false,
+      updateLivePane: true,
+    });
+  }
+}
+
+async function stopLiveTranscription({ preserveBadge = false } = {}) {
+  pendingLiveStopPromise = transcriptionController.stopLiveTranscription().catch(error => {
+    handleTranscriptionError(error, { toast: false, dialog: false, updateTranscriptPane: false, updateLivePane: true });
+    return transcriptionController.liveTranscript;
+  });
+
+  const liveText = await pendingLiveStopPromise;
+  if (liveText) liveTranscriptOutputEl.value = liveText;
+  if (!preserveBadge && !recordingTranscriptInFlight) {
+    setLiveTranscriptBadge('Inactive', 'badge bg-secondary');
+  }
+  return liveText;
+}
+
+async function finalizeSavedRecordingTranscript(fileHandle) {
+  if (!isLiveTranscriptionEnabled() || !fileHandle) {
+    setLiveTranscriptBadge('Inactive', 'badge bg-secondary');
+    return;
+  }
+
+  transcriptionBusy = true;
+  recordingTranscriptInFlight = true;
+  renderMediaFileList();
+  render(machine.state);
+  setLiveTranscriptBadge('Finalizing', 'badge bg-info text-dark');
+  setTranscriptionStatus('Transcribing the saved recording…', 'muted');
+
+  try {
+    await pendingLiveStopPromise;
+    const result = await transcriptionController.transcribeFileHandle(fileHandle, {
+      prompt: getTranscriptionPrompt(),
+      onProgress: payload => {
+        if (payload?.message) setTranscriptionStatus(payload.message, 'muted');
+      },
+    });
+
+    showToast(`Transcript saved as ${result.fileName}.`, 'success');
+    setTranscriptionStatus(`Transcript saved as ${result.fileName}.`, 'success');
+    setLiveTranscriptBadge('Saved', 'badge bg-success');
+    trackEvent('captura_recording_transcript_saved', { transcript_name: result.fileName });
+
+    await refreshMediaLibrary({
+      preferredMediaName: fileHandle.name,
+      preferredTranscriptName: result.fileName,
+      silent: true,
+    });
+  } catch (error) {
+    setLiveTranscriptBadge('Error', 'badge bg-danger');
+    handleTranscriptionError(error, {
+      toast: true,
+      dialog: false,
+      updateTranscriptPane: false,
+      updateLivePane: true,
+    });
+  } finally {
+    transcriptionBusy = false;
+    recordingTranscriptInFlight = false;
+    renderMediaFileList();
+    render(machine.state);
+  }
+}
+
 // ── UI rendering ───────────────────────────────────────────────────────────────
 
-// Single source of truth for every button, badge, and control state.
-// Called on every state machine transition.
 function render(state) {
-  const isIdle      = state === STATE.IDLE;
   const isSession   = state === STATE.SESSION;
   const isReq       = state === STATE.REQUESTING;
   const isRec       = state === STATE.RECORDING;
   const isPaused    = state === STATE.PAUSED;
   const isStopping  = state === STATE.STOPPING;
   const isError     = state === STATE.ERROR;
-  const active      = isRec || isPaused;               // recording or paused
+  const active      = isRec || isPaused;
   const hasSession  = isSession || api.hasSession;
 
-  // ── Recording control buttons ──────────────────────────────────────────────
-
-  // Start: shown when not actively recording/paused/stopping
   startBtn.hidden   = active || isStopping;
   startBtn.disabled = isReq;
 
-  // Pause/Resume: shown only while active
   pauseBtn.hidden    = !active;
   pauseBtn.disabled  = false;
   pauseBtn.innerHTML = isPaused
@@ -170,7 +660,6 @@ function render(state) {
     : '<i class="fas fa-pause me-1"></i>Pause';
   pauseBtn.className = isPaused ? 'btn btn-success' : 'btn btn-warning text-dark';
 
-  // Stop: shown only while active
   stopBtn.hidden   = !active;
   stopBtn.disabled = false;
 
@@ -181,24 +670,27 @@ function render(state) {
     : '<i class="fas fa-microphone-slash me-1"></i>Mute Mic';
   micToggleBtn.className = api.isMicMuted ? 'btn btn-success' : 'btn btn-danger';
 
-  // End Session: shown whenever a screen-share session is alive
   endSessionBtn.hidden   = !hasSession;
   endSessionBtn.disabled = isStopping || isReq;
 
-  // ── Folder / settings controls ─────────────────────────────────────────────
-
-  // Locked while recording is active or a recording is being saved
-  const lockControls = active || isStopping || isReq;
-  pickDirBtn.disabled  = lockControls;
+  const lockControls = active || isStopping || isReq || transcriptionBusy;
   const mp3Mode = isMp3Format(formatSel.value);
-  webcamSel.disabled   = lockControls || mp3Mode;
-  micSel.disabled      = lockControls;
-  sysAudioChk.disabled = lockControls || !hasGetDisplayMedia;
-  fpsSel.disabled      = lockControls || mp3Mode;
-  qualitySel.disabled  = lockControls || mp3Mode;
-  formatSel.disabled   = lockControls;
 
-  // ── Status badge ───────────────────────────────────────────────────────────
+  pickDirBtn.disabled     = lockControls;
+  webcamSel.disabled      = lockControls || mp3Mode;
+  micSel.disabled         = lockControls;
+  sysAudioChk.disabled    = lockControls || !hasGetDisplayMedia;
+  fpsSel.disabled         = lockControls || mp3Mode;
+  qualitySel.disabled     = lockControls || mp3Mode;
+  formatSel.disabled      = lockControls;
+  liveTranscriptionChk.disabled = lockControls;
+  transcriptionPromptEl.disabled = lockControls;
+  openAiApiKeyInput.disabled = lockControls;
+  openAiApiKeyToggleBtn.disabled = lockControls;
+  refreshLibraryBtn.disabled = lockControls || !storage.dirHandle;
+  transcribeSelectedBtn.disabled = lockControls || !selectedMediaEntry;
+  transcribeNewVersionBtn.disabled = lockControls || !selectedMediaEntry;
+  transcriptVersionSel.disabled = lockControls || selectedTranscriptEntries.length === 0;
 
   statusBadge.textContent =
       isRec      ? '⏺ Recording'
@@ -222,25 +714,34 @@ function render(state) {
 machine.onStateChange((state, event, payload) => {
   render(state);
 
-  // ── Analytics ─────────────────────────────────────────────────────────────
-  // Capture elapsedSecs before resetTimer() zeroes it below.
   if (state === STATE.RECORDING) {
     if (event === EVENT.ENCODER_READY) {
       trackEvent('captura_recording_start', {
-        fps:        payload?.fps,
-        quality:    payload?.quality,
-        format:     payload?.format,
-        has_webcam: payload?.webcamSelected,
-        has_mic:    payload?.micSelected,
-        sys_audio:  payload?.wantSysAudio,
+        fps:         payload?.fps,
+        quality:     payload?.quality,
+        format:      payload?.format,
+        has_webcam:  payload?.webcamSelected,
+        has_mic:     payload?.micSelected,
+        sys_audio:   payload?.wantSysAudio,
       });
+      void startLiveTranscriptionForRecording();
     } else if (event === EVENT.USER_RESUME) {
       trackEvent('captura_recording_resume', { elapsed_secs: elapsedSecs });
+      transcriptionController.resumeLiveTranscription();
+      if (isLiveTranscriptionEnabled()) {
+        setLiveTranscriptBadge('Listening', 'badge bg-success');
+        setTranscriptionStatus('Live transcription resumed.', 'muted');
+      }
     }
   } else if (state === STATE.PAUSED) {
     trackEvent('captura_recording_pause', { elapsed_secs: elapsedSecs });
+    transcriptionController.pauseLiveTranscription();
+    if (isLiveTranscriptionEnabled()) setLiveTranscriptBadge('Paused', 'badge bg-warning text-dark');
   } else if (state === STATE.STOPPING) {
     trackEvent('captura_recording_stop', { elapsed_secs: elapsedSecs, format: formatSel.value });
+    void stopLiveTranscription({ preserveBadge: true }).then(() => {
+      if (isLiveTranscriptionEnabled()) setLiveTranscriptBadge('Finalizing', 'badge bg-info text-dark');
+    });
   } else if (state === STATE.IDLE && event === EVENT.END_SESSION) {
     trackEvent('captura_session_end');
   }
@@ -249,25 +750,25 @@ machine.onStateChange((state, event, payload) => {
     trackEvent('captura_stream_failed', { error_name: payload?.name ?? 'unknown' });
   } else if (state === STATE.ERROR) {
     trackEvent('captura_error', { error_message: payload?.message ?? String(payload ?? '') });
+    void stopLiveTranscription();
+    setLiveTranscriptBadge('Error', 'badge bg-danger');
   }
 
   if (event === EVENT.FINALIZE_DONE && payload) {
     trackEvent('captura_recording_saved', { format: formatSel.value });
+    void showSaveSuccessToast(payload);
+    void finalizeSavedRecordingTranscript(payload);
   }
 
-  // ── Timer ──────────────────────────────────────────────────────────────────
   if (state === STATE.RECORDING) {
-    // USER_RESUME continues the existing elapsed count; everything else resets.
     if (event === EVENT.USER_RESUME) resumeTimer();
     else startTimer();
   } else if (state === STATE.PAUSED) {
     pauseTimer();
   } else {
-    // STOPPING, IDLE, SESSION, ERROR — reset the display
     resetTimer();
   }
 
-  // ── OS Media Session ───────────────────────────────────────────────────────
   if (state === STATE.RECORDING) {
     if (navigator.mediaSession) navigator.mediaSession.playbackState = 'playing';
     setupMediaSession(
@@ -282,12 +783,6 @@ machine.onStateChange((state, event, payload) => {
     clearMediaSession();
   }
 
-  // ── Success toast after a recording is saved ───────────────────────────────
-  if (event === EVENT.FINALIZE_DONE && payload) {
-    showSaveSuccessToast(payload);
-  }
-
-  // ── Error dialog ───────────────────────────────────────────────────────────
   if (state === STATE.ERROR) {
     showErrorDialog(
       payload?.title   || 'Recording Error',
@@ -295,15 +790,18 @@ machine.onStateChange((state, event, payload) => {
     );
   }
 
+  if ((state === STATE.IDLE || state === STATE.SESSION) && !recordingTranscriptInFlight && !isLiveTranscriptionEnabled()) {
+    setLiveTranscriptBadge('Inactive', 'badge bg-secondary');
+  }
+
   refreshAdvisoryUi();
 
-  // ── Keep stored device IDs in sync after non-recording state changes ───────
   if (state === STATE.IDLE || state === STATE.SESSION) {
     syncDevicesToApi();
   }
 });
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
+// ── Recorder helpers ───────────────────────────────────────────────────────────
 
 function syncDevicesToApi() {
   const mp3Mode = isMp3Format(formatSel.value);
@@ -315,21 +813,20 @@ function syncDevicesToApi() {
   });
 }
 
-// Build the config payload for USER_START, reading current UI values.
 function buildStartPayload() {
   syncDevicesToApi();
   const mp3Mode = isMp3Format(formatSel.value);
   return {
-    fps:           fpsSel.value,
-    quality:       qualitySel.value,
-    format:        formatSel.value,
-    wantSysAudio:  sysAudioChk.checked,
+    fps:            fpsSel.value,
+    quality:        qualitySel.value,
+    format:         formatSel.value,
+    wantSysAudio:   sysAudioChk.checked,
     webcamSelected: !mp3Mode && webcamSel.selectedIndex > 0,
     webcamDeviceId: webcamSel.value,
-    micSelected:   micSel.selectedIndex > 0,
-    micDeviceId:   micSel.value,
-    micGain:       parseFloat(micGainSlider.value),
-    sysGain:       parseFloat(sysGainSlider.value),
+    micSelected:    micSel.selectedIndex > 0,
+    micDeviceId:    micSel.value,
+    micGain:        parseFloat(micGainSlider.value),
+    sysGain:        parseFloat(sysGainSlider.value),
   };
 }
 
@@ -439,7 +936,6 @@ async function enumerateDevices() {
     restoreDevicePrefs();
     refreshAdvisoryUi();
 
-    // Restart previews only when not actively recording
     const s = machine.state;
     if (s !== STATE.RECORDING && s !== STATE.PAUSED && s !== STATE.STOPPING) {
       syncDevicesToApi();
@@ -451,6 +947,11 @@ async function enumerateDevices() {
 }
 
 // ── Preferences ────────────────────────────────────────────────────────────────
+
+function restoreDetailsPref(detailsEl, prefKey) {
+  const pref = loadPref(prefKey);
+  if (pref !== null) detailsEl.open = pref === 'true';
+}
 
 function restoreSimplePrefs() {
   const fps = loadPref(PREFS.fps);
@@ -483,6 +984,17 @@ function restoreSimplePrefs() {
     sysGainSlider.value      = sysGain;
     sysGainLabel.textContent = gainPct(sysGain);
   }
+
+  const liveTranscriptionPref = loadPref(PREFS.liveTranscriptionEnabled);
+  if (liveTranscriptionPref !== null) {
+    liveTranscriptionChk.checked = liveTranscriptionPref === 'true';
+  }
+
+  const savedPrompt = loadPref(PREFS.transcriptionPrompt);
+  if (savedPrompt !== null) transcriptionPromptEl.value = savedPrompt;
+
+  restoreDetailsPref(openAiPanel, PREFS.openAiPanelOpen);
+  restoreDetailsPref(transcriptionPanel, PREFS.transcriptionPanelOpen);
 }
 
 function restoreDevicePrefs() {
@@ -494,6 +1006,12 @@ function restoreDevicePrefs() {
   if (micId && micSel.querySelector(`option[value="${CSS.escape(micId)}"]`)) {
     micSel.value = micId;
   }
+}
+
+async function initializeStorageAndLibrary() {
+  if (!hasFSA) return;
+  await storage.init();
+  await refreshMediaLibrary({ silent: true });
 }
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────────
@@ -510,13 +1028,18 @@ if (!hasGetDisplayMedia) {
     'stream video directly to disk. Please open this page in Chrome or Edge to use the recorder.',
     'warning'
   );
-  document.getElementById('recorder-ui').hidden = true;
+  recorderUi.hidden = true;
+  transcriptionUi.hidden = true;
 }
 
 restoreSimplePrefs();
 if (!hasGetDisplayMedia) sysAudioChk.checked = false;
 refreshAdvisoryUi();
 render(machine.state);
+updateLibrarySummary();
+clearSelectedMediaState();
+setTranscriptionStatus('No transcription running.', 'muted');
+setLiveTranscriptBadge('Inactive', 'badge bg-secondary');
 
 trackEvent('captura_page_view', {
   has_screen_capture:  hasGetDisplayMedia,
@@ -525,17 +1048,14 @@ trackEvent('captura_page_view', {
 
 if (hasGetDisplayMedia) {
   navigator.mediaDevices.addEventListener('devicechange', enumerateDevices);
-  enumerateDevices();
+  void enumerateDevices();
 }
 
-// Start the canvas preview loop immediately (devices/webcam start after enumeration)
 api.restartPreviews();
-
-if (hasFSA) storage.init();
+void initializeStorageAndLibrary();
 
 // ── Event listeners ────────────────────────────────────────────────────────────
 
-// Recording controls → dispatch state machine events only; no logic inline.
 startBtn.addEventListener('click', () => {
   if (!hasGetDisplayMedia && (!isMp3Format(formatSel.value) || sysAudioChk.checked)) {
     showErrorDialog(
@@ -564,19 +1084,67 @@ micToggleBtn.addEventListener('click', () => {
 
 endSessionBtn.addEventListener('click', () => machine.transition(EVENT.END_SESSION));
 
-pickDirBtn.addEventListener('click', () => {
+pickDirBtn.addEventListener('click', async () => {
   trackEvent('captura_folder_pick');
-  storage.pickDirectory();
+  const picked = await storage.pickDirectory();
+  if (picked) await refreshMediaLibrary({ silent: true });
 });
 
-// Error dialog close → return the machine to idle / session
+refreshLibraryBtn.addEventListener('click', async () => {
+  if (!storage.dirHandle) {
+    const picked = await storage.pickDirectory();
+    if (!picked) return;
+  }
+  await refreshMediaLibrary({ silent: false });
+});
+
+transcribeSelectedBtn.addEventListener('click', () => {
+  void transcribeSelectedMedia({ alwaysVersion: false });
+});
+
+transcribeNewVersionBtn.addEventListener('click', () => {
+  void transcribeSelectedMedia({ alwaysVersion: true });
+});
+
+transcriptVersionSel.addEventListener('change', () => {
+  void loadSelectedTranscript();
+});
+
+openAiKeyForm?.addEventListener('submit', event => event.preventDefault());
+
+openAiApiKeyToggleBtn.addEventListener('click', () => {
+  const reveal = openAiApiKeyInput.type === 'password';
+  openAiApiKeyInput.type = reveal ? 'text' : 'password';
+  openAiApiKeyToggleBtn.textContent = reveal ? 'Hide' : 'Show';
+});
+
+openAiPanel.addEventListener('toggle', () => {
+  savePref(PREFS.openAiPanelOpen, String(openAiPanel.open));
+});
+
+transcriptionPanel.addEventListener('toggle', () => {
+  savePref(PREFS.transcriptionPanelOpen, String(transcriptionPanel.open));
+});
+
+liveTranscriptionChk.addEventListener('change', () => {
+  savePref(PREFS.liveTranscriptionEnabled, String(liveTranscriptionChk.checked));
+  trackEvent('captura_pref_change', { pref: 'live_transcription', value: String(liveTranscriptionChk.checked) });
+  if (!liveTranscriptionChk.checked && machine.state !== STATE.RECORDING && machine.state !== STATE.PAUSED) {
+    setLiveTranscriptBadge('Inactive', 'badge bg-secondary');
+  }
+  render(machine.state);
+});
+
+transcriptionPromptEl.addEventListener('input', () => {
+  savePref(PREFS.transcriptionPrompt, transcriptionPromptEl.value);
+});
+
 errorDialog?.addEventListener('close', () => {
   if (machine.state === STATE.ERROR) {
     machine.transition(EVENT.ERROR_DISMISSED);
   }
 });
 
-// Persist configuration changes to localStorage
 function saveAndTrackPref(key, value, analyticsKey) {
   savePref(key, value);
   trackEvent('captura_pref_change', { pref: analyticsKey, value: String(value) });
@@ -584,10 +1152,10 @@ function saveAndTrackPref(key, value, analyticsKey) {
   render(machine.state);
 }
 
-fpsSel     .addEventListener('change', () => saveAndTrackPref(PREFS.fps,      fpsSel.value,          'fps'));
-qualitySel .addEventListener('change', () => saveAndTrackPref(PREFS.quality,  qualitySel.value,      'quality'));
-formatSel  .addEventListener('change', () => saveAndTrackPref(PREFS.format,   formatSel.value,       'format'));
-sysAudioChk.addEventListener('change', () => saveAndTrackPref(PREFS.sysAudio, sysAudioChk.checked,   'sys_audio'));
+fpsSel.addEventListener('change', () => saveAndTrackPref(PREFS.fps, fpsSel.value, 'fps'));
+qualitySel.addEventListener('change', () => saveAndTrackPref(PREFS.quality, qualitySel.value, 'quality'));
+formatSel.addEventListener('change', () => saveAndTrackPref(PREFS.format, formatSel.value, 'format'));
+sysAudioChk.addEventListener('change', () => saveAndTrackPref(PREFS.sysAudio, sysAudioChk.checked, 'sys_audio'));
 
 webcamSel.addEventListener('change', () => {
   savePref(PREFS.webcam, webcamSel.value);
@@ -621,6 +1189,10 @@ sysGainSlider.addEventListener('input', () => {
   sysGainLabel.textContent = gainPct(v);
   audioMixer.setSysGain(v);
   savePref(PREFS.sysGain, v);
+});
+
+window.addEventListener('beforeunload', () => {
+  revokeSelectedPreviewUrl();
 });
 
 // ── PWA Service Worker Registration ───────────────────────────────────────────
