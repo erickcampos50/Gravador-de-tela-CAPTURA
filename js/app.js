@@ -803,7 +803,7 @@ async function startLiveTranscriptionForRecording() {
   }
 
   liveTranscriptOutputEl.value = '';
-  setLiveTranscriptBadge('Iniciando', 'badge bg-info text-dark');
+  setLiveTranscriptBadge('Iniciando', 'badge bg-info');
   setTranscriptionStatus('Iniciando transcrição ao vivo…', 'muted');
 
   try {
@@ -849,7 +849,7 @@ async function finalizeSavedRecordingTranscript(fileHandle) {
   recordingTranscriptInFlight = true;
   renderMediaFileList();
   render(machine.state);
-  setLiveTranscriptBadge('Finalizando', 'badge bg-info text-dark');
+  setLiveTranscriptBadge('Finalizando', 'badge bg-info');
   setTranscriptionStatus('Transcrevendo a gravação salva…', 'muted');
 
   let preferredTranscriptName = '';
@@ -975,8 +975,9 @@ function render(state) {
 
   statusBadge.className =
       isRec                    ? 'badge bg-danger'
-    : isPaused || isStopping   ? 'badge bg-warning text-dark'
-    : isSession                ? 'badge bg-warning text-dark'
+    : isPaused                 ? 'badge bg-secondary'
+    : isReq || isStopping || isSession
+      ? 'badge bg-info'
     : isError                  ? 'badge bg-danger'
     :                            'badge bg-secondary';
 }
@@ -1008,11 +1009,11 @@ machine.onStateChange((state, event, payload) => {
   } else if (state === STATE.PAUSED) {
     trackEvent('captura_recording_pause', { elapsed_secs: elapsedSecs });
     transcriptionController.pauseLiveTranscription();
-    if (isLiveTranscriptionEnabled()) setLiveTranscriptBadge('Pausado', 'badge bg-warning text-dark');
+    if (isLiveTranscriptionEnabled()) setLiveTranscriptBadge('Pausado', 'badge bg-secondary');
   } else if (state === STATE.STOPPING) {
     trackEvent('captura_recording_stop', { elapsed_secs: elapsedSecs, format: formatSel.value });
     void stopLiveTranscription({ preserveBadge: true }).then(() => {
-      if (isLiveTranscriptionEnabled()) setLiveTranscriptBadge('Finalizando', 'badge bg-info text-dark');
+      if (isLiveTranscriptionEnabled()) setLiveTranscriptBadge('Finalizando', 'badge bg-info');
     });
   } else if (state === STATE.IDLE && event === EVENT.END_SESSION) {
     trackEvent('captura_session_end');

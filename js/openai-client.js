@@ -1,8 +1,59 @@
 const TRANSCRIPTIONS_ENDPOINT = 'https://api.openai.com/v1/audio/transcriptions';
 const RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses';
-const DEFAULT_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe';
+const TRANSCRIPTION_MODELS = [
+  'gpt-4o-transcribe',
+  'gpt-4o-mini-transcribe',
+  'whisper-1',
+];
+const DEFAULT_TRANSCRIPTION_MODEL = TRANSCRIPTION_MODELS[0];
 const DEFAULT_POSTPROCESS_MODEL = 'gpt-5.4-mini';
 const DEFAULT_POSTPROCESS_PROMPT = 'Reescreva a transcrição em português do Brasil, com clareza, boa fluidez e preservando o sentido original. Retorne apenas o texto final.';
+const TRANSCRIPTION_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+const TRANSCRIPTION_RETRYABLE_STATUS = new Set([401, 403, 404]);
+const TRANSCRIPTION_RETRYABLE_MESSAGE_RE = /(model|access|permission|available|not found|does not exist|unsupported)/i;
+
+class OpenAIRequestError extends Error {
+  constructor(message, { status = null, model = '', requestId = '', cause = null } = {}) {
+    super(message);
+    this.name = 'OpenAIRequestError';
+    this.status = status;
+    this.model = model;
+    this.requestId = requestId;
+    if (cause) this.cause = cause;
+  }
+}
+
+function createRequestSignal(signal, timeoutMs) {
+  const controller = new AbortController();
+  let timeoutId = null;
+  let timedOut = false;
+
+  const forwardAbort = () => controller.abort();
+
+  if (signal) {
+    if (signal.aborted) {
+      controller.abort();
+    } else {
+      signal.addEventListener('abort', forwardAbort, { once: true });
+    }
+  }
+
+  if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+    timeoutId = globalThis.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+  }
+
+  return {
+    signal: controller.signal,
+    timedOut: () => timedOut,
+    cleanup() {
+      if (timeoutId !== null) globalThis.clearTimeout(timeoutId);
+      if (signal) signal.removeEventListener('abort', forwardAbort);
+    },
+  };
+}
 
 export class OpenAIConfigError extends Error {
   constructor(message) {
@@ -14,17 +65,44 @@ export class OpenAIConfigError extends Error {
 
 async function parseErrorMessage(response) {
   const contentType = response.headers.get('content-type') || '';
+  const requestId = response.headers.get('x-request-id') || response.headers.get('openai-request-id') || '';
   if (contentType.includes('application/json')) {
     try {
       const data = await response.json();
-      return data?.error?.message || data?.message || `A requisição para a OpenAI falhou com status ${response.status}.`;
+      const message = data?.error?.message || data?.message || `A requisição para a OpenAI falhou com status ${response.status}.`;
+      return requestId ? `${message} (request id: ${requestId})` : message;
     } catch (_) {
       // Ignore JSON parse failures and fall back to a generic message.
     }
   }
 
   const text = await response.text().catch(() => '');
-  return text || `A requisição para a OpenAI falhou com status ${response.status}.`;
+  const message = text || `A requisição para a OpenAI falhou com status ${response.status}.`;
+  return requestId ? `${message} (request id: ${requestId})` : message;
+}
+
+async function readErrorResponse(response, model) {
+  return new OpenAIRequestError(await parseErrorMessage(response), {
+    status: response.status,
+    model,
+    requestId: response.headers.get('x-request-id') || response.headers.get('openai-request-id') || '',
+  });
+}
+
+function shouldRetryTranscriptionError(error, model, models) {
+  if (!(error instanceof OpenAIRequestError)) return false;
+  if (!TRANSCRIPTION_RETRYABLE_STATUS.has(error.status)) return false;
+  if (!TRANSCRIPTION_RETRYABLE_MESSAGE_RE.test(error.message)) return false;
+  return model !== models[models.length - 1];
+}
+
+function isLikelyBrowserFetchError(error) {
+  return error instanceof TypeError && /Failed to fetch/i.test(error.message || '');
+}
+
+function formatTimeoutLabel(timeoutMs) {
+  const minutes = Math.max(1, Math.round(timeoutMs / 60_000));
+  return `${minutes} minuto${minutes === 1 ? '' : 's'}`;
 }
 
 function extractResponseText(data) {
@@ -66,36 +144,81 @@ export class OpenAIClientManager {
     return apiKey;
   }
 
-  async transcribeFile({ file, prompt = '', signal } = {}) {
+  async transcribeFile({ file, prompt = '', signal, model } = {}) {
     const apiKey = this.assertConfigured();
     if (!(file instanceof File)) {
       throw new Error('Nenhum arquivo de áudio foi enviado para transcrição.');
     }
 
+    const models = [...new Set([model || DEFAULT_TRANSCRIPTION_MODEL, ...TRANSCRIPTION_MODELS])];
+    let lastError = null;
+
+    for (const model of models) {
+      try {
+        return await this.#transcribeFileOnce({
+          apiKey,
+          file,
+          prompt,
+          signal,
+          model,
+        });
+      } catch (error) {
+        lastError = error;
+        if (!shouldRetryTranscriptionError(error, model, models)) {
+          throw error;
+        }
+      }
+    }
+
+    if (lastError) throw lastError;
+    throw new Error('Não foi possível transcrever o arquivo selecionado.');
+  }
+
+  async #transcribeFileOnce({ apiKey, file, prompt, signal, model }) {
     const formData = new FormData();
     formData.append('file', file, file.name || 'audio.webm');
-    formData.append('model', DEFAULT_TRANSCRIPTION_MODEL);
-    formData.append('response_format', 'text');
+    formData.append('model', model);
     if (prompt.trim()) formData.append('prompt', prompt.trim());
 
-    const response = await fetch(TRANSCRIPTIONS_ENDPOINT, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}` },
-      body: formData,
-      signal,
-    });
+    const { signal: requestSignal, timedOut, cleanup } = createRequestSignal(signal, TRANSCRIPTION_REQUEST_TIMEOUT_MS);
 
-    if (!response.ok) {
-      throw new Error(await parseErrorMessage(response));
+    try {
+      const response = await fetch(TRANSCRIPTIONS_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: formData,
+        signal: requestSignal,
+      });
+
+      if (!response.ok) {
+        throw await readErrorResponse(response, model);
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await response.json();
+        return typeof data?.text === 'string' ? data.text.trim() : '';
+      }
+
+      return (await response.text()).trim();
+    } catch (error) {
+      if (timedOut()) {
+        throw new Error(`A transcrição com ${model} excedeu o tempo limite de ${formatTimeoutLabel(TRANSCRIPTION_REQUEST_TIMEOUT_MS)}.`);
+      }
+
+      if (isLikelyBrowserFetchError(error)) {
+        throw new Error(
+          `Não foi possível conectar à OpenAI ao transcrever com ${model}. ` +
+          'Verifique a chave, a conexão e se o navegador permite essa requisição a partir da origem local.'
+        );
+      }
+
+      throw error;
+    } finally {
+      cleanup();
     }
-
-    const contentType = response.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-      const data = await response.json();
-      return typeof data?.text === 'string' ? data.text.trim() : '';
-    }
-
-    return (await response.text()).trim();
   }
 
   async postProcessText({ text, prompt = '', signal } = {}) {

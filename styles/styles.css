@@ -1,5 +1,16 @@
+:root {
+  color-scheme: light;
+}
+
+html,
 body {
-  background-color: var(--bs-dark);
+  background-color: #F5F5F7;
+}
+
+body {
+  margin: 0;
+  color: #1D1D1F;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
 }
 
 .avatar {
@@ -9,13 +20,13 @@ body {
   object-fit: cover;
 }
 
-/* Preserve the Bootstrap 4 teal info color for design continuity */
+/* Preserve a branded Apple-blue info color for generic Bootstrap utilities */
 .bg-info {
-  background-color: #17a2b8 !important;
+  background-color: #0066CC !important;
 }
 
 .text-info {
-  color: #17a2b8 !important;
+  color: #0066CC !important;
 }
 
 .pintora-wrapper {

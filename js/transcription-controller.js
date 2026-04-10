@@ -1,5 +1,6 @@
 import { FFmpeg } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js';
 import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/esm/index.js';
+import { isVideoFileName } from './media-library.js';
 
 const SAFE_UPLOAD_BYTES = 24 * 1024 * 1024;
 const LIVE_CHUNK_MS = 10_000;
@@ -16,6 +17,12 @@ let ffmpegPromise = null;
 function getExtension(fileName) {
   const parts = fileName.split('.');
   return parts.length > 1 ? parts.pop().toLowerCase() : '';
+}
+
+function isVideoMediaFile(file) {
+  if (!file) return false;
+  const type = typeof file.type === 'string' ? file.type.toLowerCase() : '';
+  return type.startsWith('video/') || isVideoFileName(file.name || '');
 }
 
 function blobToFile(blob, fileName, type = blob.type) {
@@ -387,12 +394,18 @@ export class TranscriptionController {
   async transcribeFile(file, { prompt = '', onProgress } = {}) {
     if (!(file instanceof File)) throw new Error('Nenhum arquivo foi selecionado para transcrição.');
 
-    if (file.size <= SAFE_UPLOAD_BYTES) {
+    const needsNormalization = file.size > SAFE_UPLOAD_BYTES || isVideoMediaFile(file);
+    if (!needsNormalization) {
       onProgress?.({ stage: 'uploading', message: `Enviando ${file.name} para a OpenAI…` });
       return this.#clientManager.transcribeFile({ file, prompt });
     }
 
-    onProgress?.({ stage: 'preparing', message: `Preparando ${file.name} para transcrição em partes…` });
+    onProgress?.({
+      stage: 'preparing',
+      message: isVideoMediaFile(file)
+        ? `Extraindo áudio de ${file.name} para transcrição…`
+        : `Preparando ${file.name} para transcrição em partes…`,
+    });
     const chunks = await this.#createUploadChunks(file, onProgress);
     let transcript = '';
 
@@ -419,7 +432,12 @@ export class TranscriptionController {
 
     try {
       await ffmpeg.writeFile(inputName, await fetchFile(file));
-      onProgress?.({ stage: 'preparing', message: 'Compactando áudio para envio à OpenAI…' });
+      onProgress?.({
+        stage: 'preparing',
+        message: isVideoMediaFile(file)
+          ? 'Extraindo e compactando o áudio do vídeo…'
+          : 'Compactando áudio para envio à OpenAI…',
+      });
       await ffmpeg.exec([
         '-i', inputName,
         '-vn',
