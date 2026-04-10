@@ -17,7 +17,6 @@ export function registerServiceWorker() {
 
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (reloading) return;
-    if (!isPwa()) return;
     reloading = true;
     window.location.reload();
   });
@@ -27,15 +26,19 @@ export function registerServiceWorker() {
     reg.addEventListener('updatefound', () => {
       newWorker = reg.installing;
       newWorker.addEventListener('statechange', () => {
-        if (newWorker.state === 'installed' && navigator.serviceWorker.controller && isPwa()) {
-          updateBar.hidden = false;
+        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+          if (isPwa()) {
+            updateBar.hidden = false;
+          } else {
+            newWorker.postMessage('SKIP_WAITING');
+          }
         }
       });
     });
   }).catch(err => console.warn('Service worker registration failed:', err));
 
   updateBtn.addEventListener('click', () => {
-    updateBtn.textContent = 'Updating…';
+    updateBtn.textContent = 'Atualizando…';
     updateBtn.disabled    = true;
     newWorker?.postMessage('SKIP_WAITING');
   });

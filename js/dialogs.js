@@ -35,7 +35,7 @@ export function showToast(msgOrNode, type, autohide = true) {
   closeBtn.className = type === 'warning'
     ? 'btn-close me-2 m-auto flex-shrink-0'
     : 'btn-close btn-close-white me-2 m-auto flex-shrink-0';
-  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.setAttribute('aria-label', 'Fechar');
   closeBtn.addEventListener('click', () => {
     toast.classList.remove('show');
     setTimeout(() => toast.parentNode?.removeChild(toast), TOAST_FADE_MS);

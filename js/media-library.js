@@ -52,7 +52,7 @@ export class MediaLibrary {
     const entries = await this.#storage.listDirectoryFileHandles();
     const transcriptEntries = entries.filter(entry => entry.name.toLowerCase().endsWith('.txt'));
 
-    return Promise.all(
+    const mediaEntries = await Promise.all(
       entries
         .filter(entry => isMediaFileName(entry.name))
         .map(async entry => {
@@ -66,6 +66,10 @@ export class MediaLibrary {
             transcriptCount: related.length,
           };
         })
+    );
+
+    return mediaEntries.sort(
+      (a, b) => b.lastModified - a.lastModified || b.name.localeCompare(a.name, undefined, { sensitivity: 'base' })
     );
   }
 
@@ -90,7 +94,7 @@ export class MediaLibrary {
 
   async writeTranscript(mediaFileName, transcriptText, { alwaysVersion = false, variant = 'final' } = {}) {
     const trimmed = transcriptText.trim();
-    if (!trimmed) throw new Error('The transcript is empty.');
+    if (!trimmed) throw new Error('A transcrição está vazia.');
 
     const baseName = getBaseName(mediaFileName);
     const existing = await this.getRelatedTranscripts(mediaFileName, { variant });

@@ -8,6 +8,8 @@ const NORMALIZED_BITRATE = '64k';
 const NORMALIZED_SAMPLE_RATE = '24000';
 const FILE_CHUNK_SECONDS = 10 * 60;
 const FILE_CHUNK_OVERLAP_SECONDS = 2;
+const FFMPEG_CORE_BASE_URL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm';
+const FFMPEG_CLASS_WORKER_URL = new URL('./vendor/ffmpeg/worker.js', import.meta.url).href;
 
 let ffmpegPromise = null;
 
@@ -96,7 +98,7 @@ function buildPrompt(basePrompt = '', previousTranscript = '') {
   if (!context) return cleanBasePrompt;
 
   const contextPrompt = [
-    'Context from the previous audio segment:',
+    'Contexto do segmento de áudio anterior:',
     context,
   ].join('\n');
 
@@ -160,7 +162,7 @@ function getMediaDuration(blob) {
 
     media.addEventListener('error', () => {
       cleanup();
-      reject(new Error('Could not read the media duration for chunking.'));
+      reject(new Error('Não foi possível ler a duração da mídia para dividir o arquivo.'));
     }, { once: true });
   });
 }
@@ -168,13 +170,13 @@ function getMediaDuration(blob) {
 async function getFfmpeg(onProgress) {
   if (!ffmpegPromise) {
     ffmpegPromise = (async () => {
-      onProgress?.({ stage: 'preparing', message: 'Loading the in-browser media toolkit…' });
+      onProgress?.({ stage: 'preparing', message: 'Carregando o kit de mídia no navegador…' });
 
-      const baseUrl = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm';
       const ffmpeg = new FFmpeg();
       await ffmpeg.load({
-        coreURL: await toBlobURL(`${baseUrl}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${baseUrl}/ffmpeg-core.wasm`, 'application/wasm'),
+        coreURL: await toBlobURL(`${FFMPEG_CORE_BASE_URL}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${FFMPEG_CORE_BASE_URL}/ffmpeg-core.wasm`, 'application/wasm'),
+        classWorkerURL: FFMPEG_CLASS_WORKER_URL,
       });
       return ffmpeg;
     })();
@@ -215,9 +217,9 @@ class RollingTranscriptionSession {
   }
 
   async start({ track, prompt = '' }) {
-    if (!track) throw new Error('No mixed audio track is available for live transcription.');
+    if (!track) throw new Error('Nenhuma faixa de áudio combinada está disponível para transcrição ao vivo.');
     const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextCtor) throw new Error('This browser does not support live chunk transcription.');
+    if (!AudioContextCtor) throw new Error('Este navegador não oferece suporte à transcrição ao vivo em partes.');
 
     this.#prompt = prompt;
     this.#track = track;
@@ -245,18 +247,18 @@ class RollingTranscriptionSession {
       void this.#flushChunk();
     }, LIVE_CHUNK_MS);
 
-    this.#onStatus?.({ stage: 'live', message: 'Live transcription is listening…' });
+    this.#onStatus?.({ stage: 'live', message: 'A transcrição ao vivo está ouvindo…' });
   }
 
   pause() {
     this.#paused = true;
     void this.#flushChunk(true);
-    this.#onStatus?.({ stage: 'live', message: 'Live transcription paused.' });
+    this.#onStatus?.({ stage: 'live', message: 'Transcrição ao vivo pausada.' });
   }
 
   resume() {
     this.#paused = false;
-    this.#onStatus?.({ stage: 'live', message: 'Live transcription resumed.' });
+    this.#onStatus?.({ stage: 'live', message: 'Transcrição ao vivo retomada.' });
   }
 
   async stop() {
@@ -310,13 +312,13 @@ class RollingTranscriptionSession {
     const file = blobToFile(blob, `live-transcript-${chunkIndex}.wav`, 'audio/wav');
     const prompt = buildPrompt(this.#prompt, this.#transcript);
 
-    this.#onStatus?.({ stage: 'live', message: `Transcribing live audio chunk ${chunkIndex}…` });
+    this.#onStatus?.({ stage: 'live', message: `Transcrevendo trecho ao vivo ${chunkIndex}…` });
     const text = await this.#clientManager.transcribeFile({ file, prompt });
     if (!text) return;
 
     this.#transcript = mergeTranscriptText(this.#transcript, text);
     this.#onUpdate?.({ text: this.transcript, latestSegment: text, source: 'live' });
-    this.#onStatus?.({ stage: 'live', message: 'Live transcript updated.' });
+    this.#onStatus?.({ stage: 'live', message: 'Transcrição ao vivo atualizada.' });
   }
 }
 
@@ -383,14 +385,14 @@ export class TranscriptionController {
   }
 
   async transcribeFile(file, { prompt = '', onProgress } = {}) {
-    if (!(file instanceof File)) throw new Error('No file was selected for transcription.');
+    if (!(file instanceof File)) throw new Error('Nenhum arquivo foi selecionado para transcrição.');
 
     if (file.size <= SAFE_UPLOAD_BYTES) {
-      onProgress?.({ stage: 'uploading', message: `Uploading ${file.name} to OpenAI…` });
+      onProgress?.({ stage: 'uploading', message: `Enviando ${file.name} para a OpenAI…` });
       return this.#clientManager.transcribeFile({ file, prompt });
     }
 
-    onProgress?.({ stage: 'preparing', message: `Preparing ${file.name} for chunked transcription…` });
+    onProgress?.({ stage: 'preparing', message: `Preparando ${file.name} para transcrição em partes…` });
     const chunks = await this.#createUploadChunks(file, onProgress);
     let transcript = '';
 
@@ -399,7 +401,7 @@ export class TranscriptionController {
       const chunkPrompt = buildPrompt(prompt, transcript);
       onProgress?.({
         stage: 'transcribing',
-        message: `Transcribing chunk ${index + 1} of ${chunks.length}…`,
+        message: `Transcrevendo parte ${index + 1} de ${chunks.length}…`,
         current: index + 1,
         total: chunks.length,
       });
@@ -417,7 +419,7 @@ export class TranscriptionController {
 
     try {
       await ffmpeg.writeFile(inputName, await fetchFile(file));
-      onProgress?.({ stage: 'preparing', message: 'Compressing audio for OpenAI upload…' });
+      onProgress?.({ stage: 'preparing', message: 'Compactando áudio para envio à OpenAI…' });
       await ffmpeg.exec([
         '-i', inputName,
         '-vn',
@@ -454,7 +456,7 @@ export class TranscriptionController {
 
         onProgress?.({
           stage: 'preparing',
-          message: `Cutting chunk ${chunkIndex}…`,
+          message: `Recortando parte ${chunkIndex}…`,
           current: chunkIndex,
         });
 
@@ -477,7 +479,7 @@ export class TranscriptionController {
 
       return chunks;
     } catch (error) {
-      throw new Error(`Could not prepare ${file.name} for transcription. ${error.message}`);
+      throw new Error(`Não foi possível preparar ${file.name} para transcrição. ${error.message}`);
     } finally {
       await ffmpeg.deleteFile(inputName).catch(() => {});
       await ffmpeg.deleteFile(normalizedName).catch(() => {});

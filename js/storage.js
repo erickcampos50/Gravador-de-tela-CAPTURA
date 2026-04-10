@@ -91,7 +91,7 @@ export class StorageManager {
       return true;
     } catch (err) {
       if (err.name !== 'AbortError') {
-        this.#onError('Folder Error', 'Could not select folder: ' + err.message);
+        this.#onError('Erro de pasta', 'Não foi possível selecionar a pasta: ' + err.message);
       }
       return false;
     }
@@ -108,7 +108,7 @@ export class StorageManager {
         await this.#persistHandle();
       } catch (err) {
         if (!silent && err.name !== 'AbortError') {
-          this.#onError('Folder Error', 'Could not select a save folder: ' + err.message);
+          this.#onError('Erro de pasta', 'Não foi possível selecionar a pasta de gravação: ' + err.message);
         }
         return false;
       }
@@ -122,10 +122,10 @@ export class StorageManager {
     if (perm !== 'granted') {
       if (!silent) {
         this.#onError(
-          'Permission Denied',
+          'Permissão negada',
           mode === 'readwrite'
-            ? 'Write permission for the save folder was denied. Please choose a different folder with the "Choose Folder" button.'
-            : 'Read permission for the selected folder was denied. Please choose a folder that can be read.'
+            ? 'A permissão de escrita para a pasta foi negada. Escolha outra pasta usando o botão "Escolher pasta".'
+            : 'A permissão de leitura para a pasta selecionada foi negada. Escolha uma pasta que possa ser lida.'
         );
       }
       return false;
@@ -149,7 +149,7 @@ export class StorageManager {
   }
 
   async writeTextFile(fileName, contents) {
-    if (!this.#dirHandle) throw new Error('No folder selected.');
+    if (!this.#dirHandle) throw new Error('Nenhuma pasta selecionada.');
     const fileHandle = await this.#dirHandle.getFileHandle(fileName, { create: true });
     const writable = await fileHandle.createWritable();
     await writable.write(contents);
@@ -160,7 +160,7 @@ export class StorageManager {
   // ── Private helpers ──────────────────────────────────────────────────────────
 
   #updateDirUI() {
-    this.#dirNameEl.textContent = this.#dirHandle ? this.#dirHandle.name : '(no folder selected)';
+    this.#dirNameEl.textContent = this.#dirHandle ? this.#dirHandle.name : '(nenhuma pasta selecionada)';
   }
 
   async #persistHandle() {

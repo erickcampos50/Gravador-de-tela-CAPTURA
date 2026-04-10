@@ -30,10 +30,10 @@ const FORMAT_MP3                 = 'mp3-audio-only';
 const AUDIO_BITRATE              = 128_000;
 const VIDEO_BITRATES             = { '480': 2_000_000, '720': 4_000_000, '1080': 8_000_000 };
 const ONE_HOUR_SECONDS           = 60 * 60;
-const LIBRARY_DATE_FORMATTER     = new Intl.DateTimeFormat('en-US', {
+const LIBRARY_DATE_FORMATTER     = new Intl.DateTimeFormat('pt-BR', {
+  day: '2-digit',
   month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
+  hour: '2-digit',
   minute: '2-digit',
 });
 const STATUS_CLASS = {
@@ -41,6 +41,13 @@ const STATUS_CLASS = {
   success: 'text-success',
   warning: 'text-warning',
   danger:  'text-danger',
+};
+const POSTPROCESS_MODEL = 'gpt-5.4-mini';
+const DEFAULT_POSTPROCESS_PROMPT = 'Reescreva a transcrição em português do Brasil, com clareza, boa fluidez e preservando o sentido original. Retorne apenas o texto final.';
+const POSTPROCESS_PROMPT_PRESETS = {
+  meeting_minutes: 'Reescreva esta transcrição como uma ata de reunião em português do Brasil. Estruture em: contexto, participantes citados quando identificáveis, decisões tomadas, pendências, responsáveis e próximos passos. Use linguagem objetiva e profissional.',
+  legal: 'Reescreva esta transcrição em linguagem jurídica formal, técnica e impessoal, em português do Brasil. Preserve o conteúdo original, elimine ambiguidades, organize os fatos com clareza e utilize terminologia compatível com documentos jurídicos.',
+  executive_summary: 'Reescreva esta transcrição como um resumo executivo em português do Brasil. Destaque objetivo, principais pontos discutidos, decisões, riscos, oportunidades e próximos passos em linguagem clara e concisa.',
 };
 
 // ── Formatters ─────────────────────────────────────────────────────────────────
@@ -104,9 +111,8 @@ const liveTranscriptOutputEl = document.getElementById('live-transcript-output')
 const liveTranscriptBadgeEl  = document.getElementById('live-transcript-badge');
 const refreshLibraryBtn      = document.getElementById('refresh-library-btn');
 const mediaFileListEl        = document.getElementById('media-file-list');
+const mediaDetailPanelEl     = document.getElementById('media-detail-panel');
 const librarySummaryEl       = document.getElementById('library-summary');
-const selectedMediaLabelEl   = document.getElementById('selected-media-label');
-const selectedMediaKindEl    = document.getElementById('selected-media-kind');
 const selectedVideoPlayerEl  = document.getElementById('selected-video-player');
 const selectedAudioPlayerEl  = document.getElementById('selected-audio-player');
 const mediaPreviewPlaceholderEl = document.getElementById('media-preview-placeholder');
@@ -115,6 +121,11 @@ const transcribeNewVersionBtn = document.getElementById('transcribe-new-version-
 const transcriptVersionSel   = document.getElementById('transcript-version-select');
 const selectedTranscriptStatusEl = document.getElementById('selected-transcript-status');
 const transcriptViewerEl     = document.getElementById('transcript-viewer');
+const processSelectedTranscriptBtn = document.getElementById('process-selected-transcript-btn');
+const postProcessStatusEl    = document.getElementById('postprocess-status');
+const postProcessPresetSel   = document.getElementById('postprocess-preset-select');
+const postProcessPromptEl    = document.getElementById('postprocess-prompt');
+const postProcessOutputEl    = document.getElementById('postprocess-output');
 
 // ── Capability checks ──────────────────────────────────────────────────────────
 
@@ -138,17 +149,103 @@ const transcriptionController = new TranscriptionController({
   mediaLibrary,
   onLiveUpdate: ({ text }) => {
     liveTranscriptOutputEl.value = text;
-    setTranscriptionStatus('Live transcript updated.', 'success');
-    setLiveTranscriptBadge('Listening', 'badge bg-success');
+    setTranscriptionStatus('Transcrição ao vivo atualizada.', 'success');
+    setLiveTranscriptBadge('Ouvindo', 'badge bg-success');
   },
   onStatus: payload => {
     if (payload?.message) setTranscriptionStatus(payload.message, 'muted');
   },
   onError: error => {
-    setTranscriptionStatus(error.message || 'Live transcription failed.', 'danger');
-    setLiveTranscriptBadge('Error', 'badge bg-danger');
+    setTranscriptionStatus(error.message || 'Falha na transcrição ao vivo.', 'danger');
+    setLiveTranscriptBadge('Erro', 'badge bg-danger');
   },
 });
+
+function extractPostProcessResponseText(data) {
+  if (typeof data?.output_text === 'string' && data.output_text.trim()) {
+    return data.output_text.trim();
+  }
+
+  if (!Array.isArray(data?.output)) return '';
+
+  const parts = [];
+  data.output.forEach(item => {
+    if (!Array.isArray(item?.content)) return;
+    item.content.forEach(contentItem => {
+      if (typeof contentItem?.text === 'string' && contentItem.text.trim()) {
+        parts.push(contentItem.text.trim());
+      }
+    });
+  });
+
+  return parts.join('\n\n').trim();
+}
+
+async function fallbackPostProcessText({ text, prompt = '', signal } = {}) {
+  const apiKey = openAiClient.assertConfigured();
+  const transcriptText = text?.trim() || '';
+  if (!transcriptText) {
+    throw new Error('Não há texto de transcrição para processar.');
+  }
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: POSTPROCESS_MODEL,
+      input: [
+        {
+          role: 'developer',
+          content: [
+            {
+              type: 'input_text',
+              text: 'Você reescreve transcrições. Retorne apenas o texto final reformulado, sem prefácio, sem título e sem observações extras, a menos que isso seja pedido explicitamente.',
+            },
+          ],
+        },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'input_text',
+              text: [
+                `Instrução:\n${prompt.trim() || DEFAULT_POSTPROCESS_PROMPT}`,
+                `Transcrição:\n${transcriptText}`,
+              ].join('\n\n'),
+            },
+          ],
+        },
+      ],
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    let message = `A requisição para a OpenAI falhou com status ${response.status}.`;
+    try {
+      const data = await response.json();
+      message = data?.error?.message || data?.message || message;
+    } catch (_) {
+      message = await response.text().catch(() => message);
+    }
+    throw new Error(message);
+  }
+
+  const data = await response.json();
+  const outputText = extractPostProcessResponseText(data);
+  if (!outputText) {
+    throw new Error('A OpenAI retornou um resultado vazio no pós-processamento.');
+  }
+
+  return outputText;
+}
+
+const postProcessText = typeof openAiClient.postProcessText === 'function'
+  ? params => openAiClient.postProcessText(params)
+  : params => fallbackPostProcessText(params);
 
 // ── API + state machine ────────────────────────────────────────────────────────
 
@@ -169,6 +266,9 @@ let selectedPreviewUrl        = null;
 let pendingLiveStopPromise    = Promise.resolve('');
 let recordingTranscriptInFlight = false;
 let transcriptionBusy         = false;
+let postProcessingBusy        = false;
+const selectedTranscriptNameByMedia = new Map();
+const postProcessResultsByTranscript = new Map();
 
 // ── Timer state ────────────────────────────────────────────────────────────────
 
@@ -222,6 +322,10 @@ function setSelectedTranscriptStatus(message, tone = 'muted') {
   setInlineStatus(selectedTranscriptStatusEl, message, tone);
 }
 
+function setPostProcessStatus(message, tone = 'muted') {
+  setInlineStatus(postProcessStatusEl, message, tone);
+}
+
 function setLiveTranscriptBadge(label, className) {
   liveTranscriptBadgeEl.textContent = label;
   liveTranscriptBadgeEl.className = className;
@@ -246,6 +350,10 @@ function revokeSelectedPreviewUrl() {
   selectedPreviewUrl = null;
 }
 
+function hideMediaDetailPanel() {
+  if (mediaDetailPanelEl) mediaDetailPanelEl.hidden = true;
+}
+
 function resetMediaPreview() {
   revokeSelectedPreviewUrl();
   [selectedVideoPlayerEl, selectedAudioPlayerEl].forEach(mediaEl => {
@@ -257,30 +365,67 @@ function resetMediaPreview() {
   mediaPreviewPlaceholderEl.hidden = false;
 }
 
-function clearTranscriptViewer(message = 'The selected transcript will be displayed here.') {
+function clearTranscriptViewer(message = 'A transcrição selecionada será exibida aqui.') {
   transcriptViewerEl.value = '';
   transcriptViewerEl.placeholder = message;
 }
 
-function clearSelectedMediaState(message = 'Select a file from the chosen folder to preview it and inspect the related transcript.') {
+function getSelectedTranscriptCacheKey(mediaName = selectedMediaEntry?.name || '', transcriptName = transcriptVersionSel.value) {
+  if (!mediaName || !transcriptName) return '';
+  return `${mediaName}::${transcriptName}`;
+}
+
+function syncPostProcessOutput() {
+  const cacheKey = getSelectedTranscriptCacheKey();
+  if (!cacheKey) {
+    postProcessOutputEl.value = '';
+    postProcessOutputEl.placeholder = 'O resultado processado aparecerá aqui.';
+    setPostProcessStatus('Escolha uma transcrição salva para habilitar o pós-processamento.', 'muted');
+    return;
+  }
+
+  const cached = postProcessResultsByTranscript.get(cacheKey) || '';
+  postProcessOutputEl.value = cached;
+  postProcessOutputEl.placeholder = 'O resultado processado aparecerá aqui.';
+  setPostProcessStatus(
+    cached
+      ? 'Exibindo o último texto reformulado desta versão da transcrição.'
+      : 'Adicione um prompt opcional e processe a transcrição selecionada.',
+    cached ? 'success' : 'muted'
+  );
+}
+
+function clearSelectedMediaState(message = 'Selecione um arquivo da pasta escolhida para visualizar e inspecionar a transcrição.') {
   selectedMediaEntry = null;
   selectedTranscriptEntries = [];
-  selectedMediaLabelEl.textContent = 'No file selected';
-  selectedMediaKindEl.textContent = 'Idle';
-  selectedMediaKindEl.className = 'badge bg-secondary';
   resetMediaPreview();
   mediaPreviewPlaceholderEl.textContent = message;
-  transcriptVersionSel.innerHTML = '<option value="">No transcript yet</option>';
+  transcriptVersionSel.innerHTML = '<option value="">Nenhuma transcrição ainda</option>';
   transcriptVersionSel.disabled = true;
   clearTranscriptViewer();
-  setSelectedTranscriptStatus('Pick a file to load its transcript.', 'muted');
+  setSelectedTranscriptStatus('Selecione um arquivo para carregar a transcrição.', 'muted');
+  postProcessOutputEl.value = '';
+  setPostProcessStatus('Escolha um arquivo e uma versão da transcrição para executar o pós-processamento.', 'muted');
+  hideMediaDetailPanel();
+}
+
+function applyPostProcessPreset(presetKey) {
+  if (!presetKey || !POSTPROCESS_PROMPT_PRESETS[presetKey]) return;
+  postProcessPromptEl.value = POSTPROCESS_PROMPT_PRESETS[presetKey];
+  savePref(PREFS.postProcessPrompt, postProcessPromptEl.value);
 }
 
 function buildMediaListItem(entry) {
+  const article = document.createElement('article');
+  article.className = 'captura-library-entry';
+
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'captura-library-item';
   button.dataset.name = entry.name;
+
+  const shell = document.createElement('div');
+  shell.className = 'captura-library-item-shell';
 
   const iconBox = document.createElement('div');
   iconBox.className = 'captura-library-thumb';
@@ -298,7 +443,7 @@ function buildMediaListItem(entry) {
 
   const badge = document.createElement('span');
   badge.className = 'captura-library-kind';
-  badge.textContent = entry.kind === 'video' ? 'VIDEO' : 'AUDIO';
+  badge.textContent = entry.kind === 'video' ? 'VÍDEO' : 'ÁUDIO';
 
   top.append(name, badge);
 
@@ -308,7 +453,7 @@ function buildMediaListItem(entry) {
   const dateLabel = document.createElement('span');
   dateLabel.textContent = entry.lastModified
     ? LIBRARY_DATE_FORMATTER.format(entry.lastModified)
-    : 'No date';
+    : 'Sem data';
 
   const sizeLabel = document.createElement('span');
   sizeLabel.textContent = fmtBytes(entry.size);
@@ -316,13 +461,19 @@ function buildMediaListItem(entry) {
   const transcriptLabel = document.createElement('small');
   transcriptLabel.className = 'captura-library-transcripts';
   transcriptLabel.textContent = entry.transcriptCount
-    ? `${entry.transcriptCount} transcript${entry.transcriptCount === 1 ? '' : 's'}`
-    : 'No transcript yet';
+    ? `${entry.transcriptCount} transcri${entry.transcriptCount === 1 ? 'ção' : 'ções'}`
+    : 'Sem transcrição';
+
+  const chevron = document.createElement('span');
+  chevron.className = 'captura-library-chevron';
+  chevron.innerHTML = `<i class="fas fa-chevron-${selectedMediaEntry?.name === entry.name ? 'up' : 'down'}"></i>`;
 
   bottom.append(dateLabel, document.createTextNode(' • '), sizeLabel);
   body.append(top, bottom, transcriptLabel);
-  button.append(iconBox, body);
-  return button;
+  shell.append(iconBox, body);
+  button.append(shell, chevron);
+  article.append(button);
+  return { article, button };
 }
 
 function renderMediaFileList() {
@@ -332,35 +483,42 @@ function renderMediaFileList() {
     const empty = document.createElement('div');
     empty.className = 'captura-library-empty';
     empty.textContent = storage.dirHandle
-      ? 'No supported audio or video files were found in the selected folder root.'
-      : 'Choose a folder to list its audio and video files.';
+      ? 'Nenhum arquivo de áudio ou vídeo compatível foi encontrado na pasta selecionada.'
+      : 'Escolha uma pasta para listar os arquivos de áudio e vídeo.';
     mediaFileListEl.appendChild(empty);
     return;
   }
 
   libraryEntries.forEach(entry => {
-    const item = buildMediaListItem(entry);
-    item.disabled = transcriptionBusy;
+    const { article, button: item } = buildMediaListItem(entry);
+    item.disabled = transcriptionBusy || postProcessingBusy;
     if (selectedMediaEntry?.name === entry.name) item.classList.add('active');
     item.addEventListener('click', () => {
       void selectMediaEntryByName(entry.name);
     });
-    mediaFileListEl.appendChild(item);
+    if (selectedMediaEntry?.name === entry.name) {
+      article.classList.add('is-active');
+      mediaDetailPanelEl.hidden = false;
+      article.appendChild(mediaDetailPanelEl);
+    }
+    mediaFileListEl.appendChild(article);
   });
+
+  if (!selectedMediaEntry) hideMediaDetailPanel();
 }
 
 function updateLibrarySummary() {
   if (!storage.dirHandle) {
-    librarySummaryEl.textContent = 'Select a folder to browse audio and video files.';
+    librarySummaryEl.textContent = 'Selecione uma pasta para listar áudios e vídeos.';
     return;
   }
 
   if (!libraryEntries.length) {
-    librarySummaryEl.textContent = `No supported media files found in ${storage.dirHandle.name}.`;
+    librarySummaryEl.textContent = `Nenhum arquivo compatível foi encontrado em ${storage.dirHandle.name}.`;
     return;
   }
 
-  librarySummaryEl.textContent = `${libraryEntries.length} media file${libraryEntries.length === 1 ? '' : 's'} found in ${storage.dirHandle.name}.`;
+  librarySummaryEl.textContent = `${libraryEntries.length} arquivo${libraryEntries.length === 1 ? '' : 's'} encontrado${libraryEntries.length === 1 ? '' : 's'} em ${storage.dirHandle.name}.`;
 }
 
 function handleTranscriptionError(error, {
@@ -369,8 +527,8 @@ function handleTranscriptionError(error, {
   updateTranscriptPane = false,
   updateLivePane = true,
 } = {}) {
-  const title = error?.title || 'Transcription Error';
-  const message = error?.message || String(error ?? 'Unknown transcription error.');
+  const title = error?.title || 'Erro de transcrição';
+  const message = error?.message || String(error ?? 'Erro de transcrição desconhecido.');
 
   if (updateLivePane) setTranscriptionStatus(message, 'danger');
   if (updateTranscriptPane) setSelectedTranscriptStatus(message, 'danger');
@@ -398,10 +556,11 @@ async function loadTranscriptEntries(mediaFileName, preferredTranscriptName = ''
   transcriptVersionSel.replaceChildren();
 
   if (!selectedTranscriptEntries.length) {
-    transcriptVersionSel.add(new Option('No transcript yet', ''));
+    transcriptVersionSel.add(new Option('Nenhuma transcrição ainda', ''));
     transcriptVersionSel.disabled = true;
-    clearTranscriptViewer('This file does not have a saved transcript yet.');
-    setSelectedTranscriptStatus('No transcript saved for this file yet.', 'muted');
+    clearTranscriptViewer('Este arquivo ainda não possui uma transcrição salva.');
+    setSelectedTranscriptStatus('Ainda não existe transcrição salva para este arquivo.', 'muted');
+    syncPostProcessOutput();
     return;
   }
 
@@ -410,8 +569,10 @@ async function loadTranscriptEntries(mediaFileName, preferredTranscriptName = ''
   });
   transcriptVersionSel.disabled = false;
 
+  const cachedTranscriptName = selectedTranscriptNameByMedia.get(mediaFileName);
   const preferred = selectedTranscriptEntries.find(entry => entry.name === preferredTranscriptName);
-  transcriptVersionSel.value = preferred?.name || selectedTranscriptEntries[0].name;
+  const cached = selectedTranscriptEntries.find(entry => entry.name === cachedTranscriptName);
+  transcriptVersionSel.value = preferred?.name || cached?.name || selectedTranscriptEntries[0].name;
   await loadSelectedTranscript();
 }
 
@@ -420,14 +581,19 @@ async function loadSelectedTranscript() {
   const transcriptEntry = selectedTranscriptEntries.find(entry => entry.name === transcriptName);
 
   if (!transcriptEntry) {
-    clearTranscriptViewer('This file does not have a saved transcript yet.');
-    setSelectedTranscriptStatus('No transcript saved for this file yet.', 'muted');
+    clearTranscriptViewer('Este arquivo ainda não possui uma transcrição salva.');
+    setSelectedTranscriptStatus('Ainda não existe transcrição salva para este arquivo.', 'muted');
+    syncPostProcessOutput();
     return;
   }
 
   const transcriptText = await mediaLibrary.readTranscript(transcriptEntry.handle);
   transcriptViewerEl.value = transcriptText;
-  setSelectedTranscriptStatus(`Showing ${transcriptEntry.name}.`, 'success');
+  if (selectedMediaEntry?.name) {
+    selectedTranscriptNameByMedia.set(selectedMediaEntry.name, transcriptEntry.name);
+  }
+  setSelectedTranscriptStatus(`Exibindo ${transcriptEntry.name}.`, 'success');
+  syncPostProcessOutput();
 }
 
 async function selectMediaEntryByName(mediaName, preferredTranscriptName = '') {
@@ -436,16 +602,14 @@ async function selectMediaEntryByName(mediaName, preferredTranscriptName = '') {
 
   selectedMediaEntry = entry;
   renderMediaFileList();
-  selectedMediaLabelEl.textContent = entry.name;
-  selectedMediaKindEl.textContent = entry.kind === 'video' ? 'Video' : 'Audio';
-  selectedMediaKindEl.className = entry.kind === 'video' ? 'badge bg-primary' : 'badge bg-secondary';
 
   try {
     await loadMediaPreview(entry);
     await loadTranscriptEntries(entry.name, preferredTranscriptName);
   } catch (error) {
     clearTranscriptViewer();
-    setSelectedTranscriptStatus('Could not load the selected file.', 'danger');
+    setSelectedTranscriptStatus('Não foi possível carregar o arquivo selecionado.', 'danger');
+    setPostProcessStatus('Não foi possível carregar a transcrição selecionada.', 'danger');
     handleTranscriptionError(error, { toast: true, dialog: false, updateLivePane: false });
   }
 
@@ -478,7 +642,7 @@ async function refreshMediaLibrary({
   renderMediaFileList();
 
   if (!libraryEntries.length) {
-    clearSelectedMediaState('No supported audio or video files were found in the selected folder root.');
+    clearSelectedMediaState('Nenhum arquivo de áudio ou vídeo compatível foi encontrado na pasta selecionada.');
     render(machine.state);
     return;
   }
@@ -510,8 +674,8 @@ async function transcribeSelectedMedia({ alwaysVersion = false } = {}) {
   transcriptionBusy = true;
   renderMediaFileList();
   render(machine.state);
-  setSelectedTranscriptStatus(`Preparing ${mediaName} for transcription…`, 'muted');
-  setTranscriptionStatus(`Preparing ${mediaName} for transcription…`, 'muted');
+  setSelectedTranscriptStatus(`Preparando ${mediaName} para transcrição…`, 'muted');
+  setTranscriptionStatus(`Preparando ${mediaName} para transcrição…`, 'muted');
 
   try {
     const result = await transcriptionController.transcribeFileHandle(mediaHandle, {
@@ -525,9 +689,9 @@ async function transcribeSelectedMedia({ alwaysVersion = false } = {}) {
       },
     });
 
-    showToast(`Transcript saved as ${result.fileName}.`, 'success');
-    setSelectedTranscriptStatus(`Transcript saved as ${result.fileName}.`, 'success');
-    setTranscriptionStatus(`Transcript saved as ${result.fileName}.`, 'success');
+    showToast(`Transcrição salva como ${result.fileName}.`, 'success');
+    setSelectedTranscriptStatus(`Transcrição salva como ${result.fileName}.`, 'success');
+    setTranscriptionStatus(`Transcrição salva como ${result.fileName}.`, 'success');
     trackEvent('captura_transcription_saved', { file_name: mediaName, transcript_name: result.fileName });
     await refreshMediaLibrary({
       preferredMediaName: mediaName,
@@ -549,16 +713,79 @@ async function transcribeSelectedMedia({ alwaysVersion = false } = {}) {
   }
 }
 
+async function processSelectedTranscript() {
+  if (!selectedMediaEntry || !transcriptVersionSel.value || !transcriptViewerEl.value.trim()) return;
+
+  try {
+    openAiClient.assertConfigured();
+  } catch (error) {
+    setPostProcessStatus(error.message, 'danger');
+    handleTranscriptionError(error, {
+      toast: false,
+      dialog: true,
+      updateTranscriptPane: false,
+      updateLivePane: true,
+    });
+    return;
+  }
+
+  const transcriptName = transcriptVersionSel.value;
+  const transcriptText = transcriptViewerEl.value.trim();
+  const cacheKey = getSelectedTranscriptCacheKey();
+
+  postProcessingBusy = true;
+  renderMediaFileList();
+  render(machine.state);
+  setPostProcessStatus(`Processando ${transcriptName} com a OpenAI…`, 'muted');
+  setTranscriptionStatus(`Processando ${transcriptName} com a OpenAI…`, 'muted');
+  trackEvent('captura_postprocess_start', {
+    file_name: selectedMediaEntry.name,
+    transcript_name: transcriptName,
+  });
+
+  try {
+    const result = await postProcessText({
+      text: transcriptText,
+      prompt: postProcessPromptEl.value,
+    });
+
+    if (cacheKey) postProcessResultsByTranscript.set(cacheKey, result);
+    postProcessOutputEl.value = result;
+    setPostProcessStatus('Texto reformulado com sucesso.', 'success');
+    setTranscriptionStatus(`Pós-processamento concluído para ${transcriptName}.`, 'success');
+    trackEvent('captura_postprocess_saved', {
+      file_name: selectedMediaEntry.name,
+      transcript_name: transcriptName,
+    });
+  } catch (error) {
+    setPostProcessStatus(error.message || 'Falha no pós-processamento.', 'danger');
+    trackEvent('captura_postprocess_error', {
+      file_name: selectedMediaEntry.name,
+      transcript_name: transcriptName,
+    });
+    handleTranscriptionError(error, {
+      toast: true,
+      dialog: false,
+      updateTranscriptPane: false,
+      updateLivePane: true,
+    });
+  } finally {
+    postProcessingBusy = false;
+    renderMediaFileList();
+    render(machine.state);
+  }
+}
+
 async function startLiveTranscriptionForRecording() {
   if (!isLiveTranscriptionEnabled()) {
-    setLiveTranscriptBadge('Inactive', 'badge bg-secondary');
+    setLiveTranscriptBadge('Inativo', 'badge bg-secondary');
     return;
   }
 
   try {
     openAiClient.assertConfigured();
   } catch (error) {
-    setLiveTranscriptBadge('Key Needed', 'badge bg-danger');
+    setLiveTranscriptBadge('Chave necessária', 'badge bg-danger');
     handleTranscriptionError(error, {
       toast: false,
       dialog: true,
@@ -570,25 +797,25 @@ async function startLiveTranscriptionForRecording() {
 
   const track = audioMixer.getMixedTrackClone();
   if (!track) {
-    setLiveTranscriptBadge('No Audio', 'badge bg-secondary');
-    setTranscriptionStatus('Live transcription skipped because this recording has no active audio source.', 'warning');
+    setLiveTranscriptBadge('Sem áudio', 'badge bg-secondary');
+    setTranscriptionStatus('A transcrição ao vivo foi ignorada porque esta gravação não tem fonte de áudio ativa.', 'warning');
     return;
   }
 
   liveTranscriptOutputEl.value = '';
-  setLiveTranscriptBadge('Starting', 'badge bg-info text-dark');
-  setTranscriptionStatus('Starting live transcription…', 'muted');
+  setLiveTranscriptBadge('Iniciando', 'badge bg-info text-dark');
+  setTranscriptionStatus('Iniciando transcrição ao vivo…', 'muted');
 
   try {
     await transcriptionController.startLiveTranscription({
       track,
       prompt: getTranscriptionPrompt(),
     });
-    setLiveTranscriptBadge('Listening', 'badge bg-success');
+    setLiveTranscriptBadge('Ouvindo', 'badge bg-success');
     trackEvent('captura_live_transcription_start');
   } catch (error) {
     track.stop();
-    setLiveTranscriptBadge('Error', 'badge bg-danger');
+    setLiveTranscriptBadge('Erro', 'badge bg-danger');
     handleTranscriptionError(error, {
       toast: true,
       dialog: false,
@@ -607,14 +834,14 @@ async function stopLiveTranscription({ preserveBadge = false } = {}) {
   const liveText = await pendingLiveStopPromise;
   if (liveText) liveTranscriptOutputEl.value = liveText;
   if (!preserveBadge && !recordingTranscriptInFlight) {
-    setLiveTranscriptBadge('Inactive', 'badge bg-secondary');
+    setLiveTranscriptBadge('Inativo', 'badge bg-secondary');
   }
   return liveText;
 }
 
 async function finalizeSavedRecordingTranscript(fileHandle) {
   if (!isLiveTranscriptionEnabled() || !fileHandle) {
-    setLiveTranscriptBadge('Inactive', 'badge bg-secondary');
+    setLiveTranscriptBadge('Inativo', 'badge bg-secondary');
     return;
   }
 
@@ -622,8 +849,8 @@ async function finalizeSavedRecordingTranscript(fileHandle) {
   recordingTranscriptInFlight = true;
   renderMediaFileList();
   render(machine.state);
-  setLiveTranscriptBadge('Finalizing', 'badge bg-info text-dark');
-  setTranscriptionStatus('Transcribing the saved recording…', 'muted');
+  setLiveTranscriptBadge('Finalizando', 'badge bg-info text-dark');
+  setTranscriptionStatus('Transcrevendo a gravação salva…', 'muted');
 
   let preferredTranscriptName = '';
 
@@ -632,7 +859,7 @@ async function finalizeSavedRecordingTranscript(fileHandle) {
     if (liveText.trim()) {
       const liveResult = await mediaLibrary.writeTranscript(fileHandle.name, liveText, { variant: 'live' });
       preferredTranscriptName = liveResult.fileName;
-      setTranscriptionStatus(`Live transcript saved as ${liveResult.fileName}.`, 'success');
+      setTranscriptionStatus(`Transcrição ao vivo salva como ${liveResult.fileName}.`, 'success');
       trackEvent('captura_live_transcript_saved', { transcript_name: liveResult.fileName });
     }
 
@@ -644,9 +871,9 @@ async function finalizeSavedRecordingTranscript(fileHandle) {
     });
 
     preferredTranscriptName = result.fileName;
-    showToast(`Transcript saved as ${result.fileName}.`, 'success');
-    setTranscriptionStatus(`Transcript saved as ${result.fileName}.`, 'success');
-    setLiveTranscriptBadge('Saved', 'badge bg-success');
+    showToast(`Transcrição salva como ${result.fileName}.`, 'success');
+    setTranscriptionStatus(`Transcrição salva como ${result.fileName}.`, 'success');
+    setLiveTranscriptBadge('Salvo', 'badge bg-success');
     trackEvent('captura_recording_transcript_saved', { transcript_name: result.fileName });
 
     await refreshMediaLibrary({
@@ -662,7 +889,7 @@ async function finalizeSavedRecordingTranscript(fileHandle) {
         silent: true,
       }).catch(() => {});
     }
-    setLiveTranscriptBadge('Error', 'badge bg-danger');
+    setLiveTranscriptBadge('Erro', 'badge bg-danger');
     handleTranscriptionError(error, {
       toast: true,
       dialog: false,
@@ -695,9 +922,11 @@ function render(state) {
   pauseBtn.hidden    = !active;
   pauseBtn.disabled  = false;
   pauseBtn.innerHTML = isPaused
-    ? '<i class="fas fa-play me-1"></i>Resume'
-    : '<i class="fas fa-pause me-1"></i>Pause';
-  pauseBtn.className = isPaused ? 'btn btn-success' : 'btn btn-warning text-dark';
+    ? '<i class="fas fa-play me-1"></i>Retomar'
+    : '<i class="fas fa-pause me-1"></i>Pausar';
+  pauseBtn.className = isPaused
+    ? 'btn captura-pause-button is-resume'
+    : 'btn captura-pause-button';
 
   stopBtn.hidden   = !active;
   stopBtn.disabled = false;
@@ -705,15 +934,16 @@ function render(state) {
   micToggleBtn.hidden   = !active || !api.hasActiveMic;
   micToggleBtn.disabled = !active || !api.hasActiveMic;
   micToggleBtn.innerHTML = api.isMicMuted
-    ? '<i class="fas fa-microphone me-1"></i>Unmute Mic'
-    : '<i class="fas fa-microphone-slash me-1"></i>Mute Mic';
+    ? '<i class="fas fa-microphone me-1"></i>Ativar microfone'
+    : '<i class="fas fa-microphone-slash me-1"></i>Silenciar microfone';
   micToggleBtn.className = api.isMicMuted ? 'btn btn-success' : 'btn btn-danger';
 
   endSessionBtn.hidden   = !hasSession;
   endSessionBtn.disabled = isStopping || isReq;
 
-  const lockControls = active || isStopping || isReq || transcriptionBusy;
+  const lockControls = active || isStopping || isReq || transcriptionBusy || postProcessingBusy;
   const mp3Mode = isMp3Format(formatSel.value);
+  const hasSelectedTranscript = selectedTranscriptEntries.length > 0 && !!transcriptVersionSel.value;
 
   pickDirBtn.disabled     = lockControls;
   webcamSel.disabled      = lockControls || mp3Mode;
@@ -730,15 +960,18 @@ function render(state) {
   transcribeSelectedBtn.disabled = lockControls || !selectedMediaEntry;
   transcribeNewVersionBtn.disabled = lockControls || !selectedMediaEntry;
   transcriptVersionSel.disabled = lockControls || selectedTranscriptEntries.length === 0;
+  processSelectedTranscriptBtn.disabled = lockControls || !hasSelectedTranscript;
+  postProcessPromptEl.disabled = lockControls;
+  postProcessPresetSel.disabled = lockControls;
 
   statusBadge.textContent =
-      isRec      ? '⏺ Recording'
-    : isPaused   ? '⏸ Paused'
-    : isReq      ? '⏳ Acquiring…'
-    : isStopping ? '⏳ Saving…'
-    : isSession  ? '◉ Session Active'
-    : isError    ? '⚠ Error'
-    :              'Idle';
+      isRec      ? '⏺ Gravando'
+    : isPaused   ? '⏸ Pausado'
+    : isReq      ? '⏳ Preparando…'
+    : isStopping ? '⏳ Salvando…'
+    : isSession  ? '◉ Sessão ativa'
+    : isError    ? '⚠ Erro'
+    :              'Inativo';
 
   statusBadge.className =
       isRec                    ? 'badge bg-danger'
@@ -768,18 +1001,18 @@ machine.onStateChange((state, event, payload) => {
       trackEvent('captura_recording_resume', { elapsed_secs: elapsedSecs });
       transcriptionController.resumeLiveTranscription();
       if (isLiveTranscriptionEnabled()) {
-        setLiveTranscriptBadge('Listening', 'badge bg-success');
-        setTranscriptionStatus('Live transcription resumed.', 'muted');
+        setLiveTranscriptBadge('Ouvindo', 'badge bg-success');
+        setTranscriptionStatus('Transcrição ao vivo retomada.', 'muted');
       }
     }
   } else if (state === STATE.PAUSED) {
     trackEvent('captura_recording_pause', { elapsed_secs: elapsedSecs });
     transcriptionController.pauseLiveTranscription();
-    if (isLiveTranscriptionEnabled()) setLiveTranscriptBadge('Paused', 'badge bg-warning text-dark');
+    if (isLiveTranscriptionEnabled()) setLiveTranscriptBadge('Pausado', 'badge bg-warning text-dark');
   } else if (state === STATE.STOPPING) {
     trackEvent('captura_recording_stop', { elapsed_secs: elapsedSecs, format: formatSel.value });
     void stopLiveTranscription({ preserveBadge: true }).then(() => {
-      if (isLiveTranscriptionEnabled()) setLiveTranscriptBadge('Finalizing', 'badge bg-info text-dark');
+      if (isLiveTranscriptionEnabled()) setLiveTranscriptBadge('Finalizando', 'badge bg-info text-dark');
     });
   } else if (state === STATE.IDLE && event === EVENT.END_SESSION) {
     trackEvent('captura_session_end');
@@ -790,7 +1023,7 @@ machine.onStateChange((state, event, payload) => {
   } else if (state === STATE.ERROR) {
     trackEvent('captura_error', { error_message: payload?.message ?? String(payload ?? '') });
     void stopLiveTranscription();
-    setLiveTranscriptBadge('Error', 'badge bg-danger');
+    setLiveTranscriptBadge('Erro', 'badge bg-danger');
   }
 
   if (event === EVENT.FINALIZE_DONE && payload) {
@@ -824,13 +1057,13 @@ machine.onStateChange((state, event, payload) => {
 
   if (state === STATE.ERROR) {
     showErrorDialog(
-      payload?.title   || 'Recording Error',
-      payload?.message || String(payload ?? 'An unknown error occurred.')
+      payload?.title   || 'Erro de gravação',
+      payload?.message || String(payload ?? 'Ocorreu um erro desconhecido.')
     );
   }
 
   if ((state === STATE.IDLE || state === STATE.SESSION) && !recordingTranscriptInFlight && !isLiveTranscriptionEnabled()) {
-    setLiveTranscriptBadge('Inactive', 'badge bg-secondary');
+    setLiveTranscriptBadge('Inativo', 'badge bg-secondary');
   }
 
   refreshAdvisoryUi();
@@ -871,14 +1104,14 @@ function buildStartPayload() {
 
 async function showSaveSuccessToast(fileHandle) {
   const msg = document.createDocumentFragment();
-  msg.append('Recording saved to disk. ');
+  msg.append('Gravação salva no disco. ');
   if (fileHandle) {
     try {
       const file = await fileHandle.getFile();
       const url  = URL.createObjectURL(file);
       const link = Object.assign(document.createElement('a'), {
         href: url, target: '_blank', rel: 'noopener noreferrer',
-        textContent: 'Open in new tab', className: 'toast-link',
+        textContent: 'Abrir em nova aba', className: 'toast-link',
       });
       msg.append(link);
       setTimeout(() => URL.revokeObjectURL(url), BLOB_URL_REVOKE_TIMEOUT_MS);
@@ -909,14 +1142,14 @@ function updateRecordingEstimate() {
   if (!recordingEstimateEl) return;
   if (bitrate <= 0) {
     recordingEstimateEl.textContent = isMp3Format(formatSel.value)
-      ? 'Select a microphone or enable system audio for MP3.'
-      : 'Select audio sources to include them in the estimate.';
+      ? 'Selecione um microfone ou ative o áudio do sistema para MP3.'
+      : 'Selecione fontes de áudio para incluí-las na estimativa.';
     return;
   }
 
   const label = (machine.state === STATE.RECORDING || machine.state === STATE.PAUSED)
-    ? 'Estimated file size'
-    : '1h estimate';
+    ? 'Tamanho estimado'
+    : 'Estimativa de 1h';
   const estimatedBytes = (bitrate / 8) * getEstimateSeconds();
   recordingEstimateEl.textContent = `${label}: ${fmtBytes(estimatedBytes)}`;
 }
@@ -929,10 +1162,10 @@ function updateFormatHint() {
   }
 
   formatHintEl.textContent = sysAudioChk.checked
-    ? 'MP3 with system audio still requires screen share.'
+    ? 'MP3 com áudio do sistema ainda exige compartilhamento de tela.'
     : micSel.selectedIndex > 0
-      ? 'MP3 records microphone only and skips screen share.'
-      : 'MP3 needs a microphone or system audio enabled.';
+      ? 'MP3 grava apenas o microfone e dispensa compartilhamento de tela.'
+      : 'MP3 precisa de microfone ou áudio do sistema ativo.';
 }
 
 function updateLongRecordingAlert() {
@@ -948,8 +1181,8 @@ function updateLongRecordingAlert() {
   longRecordingAlertEl.hidden = false;
   longRecordingAlertEl.className = `alert ${heavyVideoProfile ? 'alert-warning' : 'alert-info'} py-2 small mb-0`;
   longRecordingAlertEl.textContent = heavyVideoProfile
-    ? 'Long meeting? This video setup can produce large files. For safer long recordings, prefer 480p at 15 fps, disable webcam if optional, or switch to MP3 when you only need audio.'
-    : 'This is the lightest video profile available here. MP3 will still use much less space if the meeting only needs audio.';
+    ? 'Reunião longa? Esta configuração de vídeo pode gerar arquivos grandes. Para gravações longas, prefira 480p a 15 fps, desative a webcam se ela for opcional ou use MP3 quando só precisar do áudio.'
+    : 'Este é o perfil de vídeo mais leve disponível. Ainda assim, MP3 ocupa bem menos espaço quando você só precisa do áudio.';
 }
 
 function refreshAdvisoryUi() {
@@ -966,11 +1199,11 @@ async function enumerateDevices() {
     const videoDevs = devices.filter(d => d.kind === 'videoinput');
     const audioDevs = devices.filter(d => d.kind === 'audioinput');
 
-    webcamSel.innerHTML = '<option value="">None</option>';
-    videoDevs.forEach((d, i) => webcamSel.add(new Option(d.label || `Camera ${i + 1}`, d.deviceId)));
+    webcamSel.innerHTML = '<option value="">Nenhuma</option>';
+    videoDevs.forEach((d, i) => webcamSel.add(new Option(d.label || `Câmera ${i + 1}`, d.deviceId)));
 
-    micSel.innerHTML = '<option value="">None</option>';
-    audioDevs.forEach((d, i) => micSel.add(new Option(d.label || `Microphone ${i + 1}`, d.deviceId)));
+    micSel.innerHTML = '<option value="">Nenhum</option>';
+    audioDevs.forEach((d, i) => micSel.add(new Option(d.label || `Microfone ${i + 1}`, d.deviceId)));
 
     restoreDevicePrefs();
     refreshAdvisoryUi();
@@ -981,7 +1214,7 @@ async function enumerateDevices() {
       api.restartPreviews();
     }
   } catch (err) {
-    showErrorDialog('Device Error', 'Could not enumerate devices: ' + err.message);
+    showErrorDialog('Erro de dispositivos', 'Não foi possível listar os dispositivos: ' + err.message);
   }
 }
 
@@ -1032,6 +1265,9 @@ function restoreSimplePrefs() {
   const savedPrompt = loadPref(PREFS.transcriptionPrompt);
   if (savedPrompt !== null) transcriptionPromptEl.value = savedPrompt;
 
+  const savedPostProcessPrompt = loadPref(PREFS.postProcessPrompt);
+  if (savedPostProcessPrompt !== null) postProcessPromptEl.value = savedPostProcessPrompt;
+
   restoreDetailsPref(openAiPanel, PREFS.openAiPanelOpen);
   restoreDetailsPref(transcriptionPanel, PREFS.transcriptionPanelOpen);
 }
@@ -1057,14 +1293,14 @@ async function initializeStorageAndLibrary() {
 
 if (!hasGetDisplayMedia) {
   showAlert(
-    'Screen capture is not available in this browser. ' +
-    'Video recording and system-audio capture are unavailable here, but MP3 microphone-only recording can still work.',
+    'A captura de tela não está disponível neste navegador. ' +
+    'A gravação de vídeo e o áudio do sistema não funcionarão aqui, mas a gravação MP3 apenas com microfone ainda pode funcionar.',
     'warning'
   );
 } else if (!hasFSA) {
   showAlert(
-    'Your browser does not support the File System Access API, which this recorder requires to ' +
-    'stream video directly to disk. Please open this page in Chrome or Edge to use the recorder.',
+    'Seu navegador não oferece suporte à File System Access API, necessária para ' +
+    'gravar vídeo diretamente no disco. Abra esta página no Chrome ou no Edge para usar o gravador.',
     'warning'
   );
   recorderUi.hidden = true;
@@ -1077,8 +1313,9 @@ refreshAdvisoryUi();
 render(machine.state);
 updateLibrarySummary();
 clearSelectedMediaState();
-setTranscriptionStatus('No transcription running.', 'muted');
-setLiveTranscriptBadge('Inactive', 'badge bg-secondary');
+setTranscriptionStatus('Nenhuma transcrição em andamento.', 'muted');
+setLiveTranscriptBadge('Inativo', 'badge bg-secondary');
+setPostProcessStatus('Escolha um arquivo e uma versão da transcrição para executar o pós-processamento.', 'muted');
 
 trackEvent('captura_page_view', {
   has_screen_capture:  hasGetDisplayMedia,
@@ -1098,8 +1335,8 @@ void initializeStorageAndLibrary();
 startBtn.addEventListener('click', () => {
   if (!hasGetDisplayMedia && (!isMp3Format(formatSel.value) || sysAudioChk.checked)) {
     showErrorDialog(
-      'Not Supported',
-      'This browser cannot capture the screen. Use MP3 with microphone only, or switch to a desktop browser with screen-capture support.'
+      'Não suportado',
+      'Este navegador não consegue capturar a tela. Use MP3 apenas com microfone ou troque para um navegador desktop com suporte a captura de tela.'
     );
     return;
   }
@@ -1146,7 +1383,18 @@ transcribeNewVersionBtn.addEventListener('click', () => {
 });
 
 transcriptVersionSel.addEventListener('change', () => {
+  if (selectedMediaEntry?.name) {
+    selectedTranscriptNameByMedia.set(selectedMediaEntry.name, transcriptVersionSel.value);
+  }
   void loadSelectedTranscript();
+});
+
+processSelectedTranscriptBtn.addEventListener('click', () => {
+  void processSelectedTranscript();
+});
+
+postProcessPresetSel.addEventListener('change', () => {
+  applyPostProcessPreset(postProcessPresetSel.value);
 });
 
 openAiKeyForm?.addEventListener('submit', event => event.preventDefault());
@@ -1154,7 +1402,7 @@ openAiKeyForm?.addEventListener('submit', event => event.preventDefault());
 openAiApiKeyToggleBtn.addEventListener('click', () => {
   const reveal = openAiApiKeyInput.type === 'password';
   openAiApiKeyInput.type = reveal ? 'text' : 'password';
-  openAiApiKeyToggleBtn.textContent = reveal ? 'Hide' : 'Show';
+  openAiApiKeyToggleBtn.textContent = reveal ? 'Ocultar' : 'Mostrar';
 });
 
 openAiPanel.addEventListener('toggle', () => {
@@ -1169,13 +1417,17 @@ liveTranscriptionChk.addEventListener('change', () => {
   savePref(PREFS.liveTranscriptionEnabled, String(liveTranscriptionChk.checked));
   trackEvent('captura_pref_change', { pref: 'live_transcription', value: String(liveTranscriptionChk.checked) });
   if (!liveTranscriptionChk.checked && machine.state !== STATE.RECORDING && machine.state !== STATE.PAUSED) {
-    setLiveTranscriptBadge('Inactive', 'badge bg-secondary');
+    setLiveTranscriptBadge('Inativo', 'badge bg-secondary');
   }
   render(machine.state);
 });
 
 transcriptionPromptEl.addEventListener('input', () => {
   savePref(PREFS.transcriptionPrompt, transcriptionPromptEl.value);
+});
+
+postProcessPromptEl.addEventListener('input', () => {
+  savePref(PREFS.postProcessPrompt, postProcessPromptEl.value);
 });
 
 errorDialog?.addEventListener('close', () => {

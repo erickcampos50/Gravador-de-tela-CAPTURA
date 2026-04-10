@@ -14,6 +14,7 @@ export const PREFS = {
   sysGain:  'captura-sysGain',
   liveTranscriptionEnabled: 'captura-liveTranscriptionEnabled',
   transcriptionPrompt:      'captura-transcriptionPrompt',
+  postProcessPrompt:        'captura-postProcessPrompt',
   openAiPanelOpen:          'captura-openAiPanelOpen',
   transcriptionPanelOpen:   'captura-transcriptionPanelOpen',
 };

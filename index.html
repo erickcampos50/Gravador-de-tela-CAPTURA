@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Browser-based screen recorder with webcam overlay and audio mixing.">
+  <meta name="description" content="Gravador de tela no navegador com transcrição e pós-processamento com IA.">
   <meta name="theme-color" content="#0dcaf0">
-  <title>Captura Web Recorder</title>
+  <title>Captura Studio</title>
   <link rel="icon" href="./images/favicon.ico">
   <link rel="manifest" href="./manifest.json">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous">
@@ -19,9 +19,9 @@
 <body class="captura-body">
 
 <div id="pwa-update-bar" class="d-flex align-items-center gap-2" hidden>
-  <span><i class="fas fa-sync-alt me-1"></i>A new version of Captura is available!</span>
-  <button id="pwa-update-btn" class="btn btn-sm btn-light flex-shrink-0">Update Now</button>
-  <button id="pwa-dismiss-btn" class="btn btn-sm btn-close flex-shrink-0" aria-label="Dismiss"></button>
+  <span><i class="fas fa-sync-alt me-1"></i>Uma nova versão do Captura está disponível.</span>
+  <button id="pwa-update-btn" class="btn btn-sm btn-light flex-shrink-0">Atualizar agora</button>
+  <button id="pwa-dismiss-btn" class="btn btn-sm btn-close flex-shrink-0" aria-label="Fechar"></button>
 </div>
 
 <div id="alert-box" class="alert mb-3" hidden></div>
@@ -30,84 +30,51 @@
 
 <dialog id="captura-error-dialog" aria-labelledby="captura-error-title">
   <div class="captura-dialog-content">
-    <button type="button" class="captura-dialog-close" id="captura-error-close" aria-label="Close">&times;</button>
+    <button type="button" class="captura-dialog-close" id="captura-error-close" aria-label="Fechar">&times;</button>
     <h5 id="captura-error-title" class="captura-dialog-title"></h5>
     <p id="captura-error-body" class="captura-dialog-body"></p>
   </div>
 </dialog>
 
 <main class="captura-shell">
-  <aside class="captura-sidebar google-anno-skip">
-    <div class="captura-brand">
+  <header class="captura-header google-anno-skip">
+    <div class="captura-brand captura-brand-inline">
       <div class="captura-brand-mark">
-        <i class="fas fa-sliders-h"></i>
+        <i class="fas fa-wave-square"></i>
       </div>
       <div>
-        <div class="captura-brand-title">ARCHIVE</div>
-        <div class="captura-brand-subtitle">PRO STUDIO</div>
+        <div class="captura-brand-title">Captura Studio</div>
+        <div class="captura-brand-subtitle">Grave, transcreva e reformule</div>
       </div>
     </div>
 
-    <nav class="captura-nav">
-      <a class="captura-nav-link is-active" href="#recorder-ui">
-        <i class="fas fa-border-all"></i>
-        <span>Dashboard</span>
-      </a>
-      <a class="captura-nav-link" href="#captura-library-card">
-        <i class="fas fa-photo-film"></i>
-        <span>Media Library</span>
-      </a>
-      <a class="captura-nav-link" href="#captura-engine-card">
-        <i class="fas fa-file-lines"></i>
-        <span>Transcripts</span>
-      </a>
-      <a class="captura-nav-link" href="#transcription-settings-panel">
-        <i class="fas fa-bolt"></i>
-        <span>Automation</span>
-      </a>
-      <a class="captura-nav-link" href="#openai-panel">
-        <i class="fas fa-gear"></i>
-        <span>Settings</span>
-      </a>
-    </nav>
-
-    <div class="captura-sidebar-footer">
-      <a class="captura-sidebar-cta" href="#recorder-ui">
-        <i class="fas fa-plus-circle"></i>
-        <span>New Recording</span>
-      </a>
-      <a class="captura-sidebar-help" href="#captura-about">
-        <i class="far fa-circle-question"></i>
-        <span>Help Center</span>
-      </a>
+    <div class="captura-header-actions">
+      <span id="status-badge" class="badge bg-secondary">Inativo</span>
+      <span id="timer-text" class="captura-timer-pill">00:00</span>
     </div>
-  </aside>
+  </header>
 
   <div id="tool-main-content" class="captura-workspace">
+    <div class="captura-session-header google-anno-skip">
+      <div>
+        <p class="captura-panel-kicker mb-2">Espaço de captura</p>
+        <h1 class="captura-page-title">Estúdio de gravação</h1>
+        <p class="captura-page-subtitle mb-0">Grave, transcreva e reformule cada arquivo sem sair da lista.</p>
+      </div>
+    </div>
+
     <div class="captura-workspace-grid google-anno-skip">
       <section class="captura-main-column">
-        <div class="captura-session-header">
-          <div>
-            <p class="captura-panel-kicker mb-2">Capture Workspace</p>
-            <h1 class="captura-page-title">Live Session</h1>
-            <p class="captura-page-subtitle mb-0">Configure your inputs and start capturing high-fidelity media.</p>
-          </div>
-          <div class="captura-session-meta">
-            <span id="status-badge" class="badge bg-secondary">Idle</span>
-            <span id="timer-text" class="captura-timer-pill">00:00</span>
-          </div>
-        </div>
-
         <section id="recorder-ui" class="captura-live-panel">
           <div class="captura-stage-card">
             <div class="captura-stage-head">
               <div>
-                <p class="captura-panel-kicker mb-1">Live Preview</p>
-                <p id="recording-estimate" class="captura-stage-support mb-0">1h estimate: 1.77 GB</p>
+                <p class="captura-panel-kicker mb-1">Pré-visualização</p>
+                <p id="recording-estimate" class="captura-stage-support mb-0">Estimativa de 1h: 1,77 GB</p>
               </div>
               <div class="captura-stage-actions">
                 <span id="format-hint" class="captura-stage-support"></span>
-                <button type="button" class="captura-stage-expand" aria-label="Preview focus">
+                <button type="button" class="captura-stage-expand" aria-label="Expandir pré-visualização">
                   <i class="fas fa-expand"></i>
                 </button>
               </div>
@@ -127,33 +94,33 @@
             <section class="captura-control-card">
               <div class="captura-card-title">
                 <i class="fas fa-sliders-h"></i>
-                <span>Source Controls</span>
+                <span>Controles de captura</span>
               </div>
 
               <label class="captura-field" for="webcam-select">
                 <span class="captura-field-label">
                   <i class="fas fa-video"></i>
-                  Webcam Overlay
+                  Webcam
                 </span>
                 <select id="webcam-select" class="form-select form-select-sm">
-                  <option value="">None</option>
+                  <option value="">Nenhuma</option>
                 </select>
               </label>
 
               <label class="captura-field" for="mic-select">
                 <span class="captura-field-label">
                   <i class="fas fa-microphone"></i>
-                  Primary Microphone
+                  Microfone principal
                 </span>
                 <select id="mic-select" class="form-select form-select-sm">
-                  <option value="">None</option>
+                  <option value="">Nenhum</option>
                 </select>
               </label>
 
               <label class="captura-toggle-row" for="sys-audio-chk">
                 <span class="captura-field-label">
                   <i class="fas fa-wave-square"></i>
-                  Capture System Audio
+                  Capturar áudio do sistema
                 </span>
                 <span class="form-check form-switch m-0">
                   <input class="form-check-input" type="checkbox" id="sys-audio-chk" checked>
@@ -164,12 +131,12 @@
             <section class="captura-control-card">
               <div class="captura-card-title">
                 <i class="fas fa-chart-simple"></i>
-                <span>Audio Mixer</span>
+                <span>Mixer de áudio</span>
               </div>
 
               <div class="captura-slider-block">
                 <div class="d-flex align-items-center justify-content-between mb-1">
-                  <label class="captura-field-label mb-0" for="sys-gain-slider">System Audio</label>
+                  <label class="captura-field-label mb-0" for="sys-gain-slider">Áudio do sistema</label>
                   <span id="sys-gain-label" class="captura-decibel-pill">100%</span>
                 </div>
                 <input type="range" class="form-range" id="sys-gain-slider" min="0" max="2" step="0.01" value="1">
@@ -178,7 +145,7 @@
 
               <div class="captura-slider-block">
                 <div class="d-flex align-items-center justify-content-between mb-1">
-                  <label class="captura-field-label mb-0" for="mic-gain-slider">Mic Input</label>
+                  <label class="captura-field-label mb-0" for="mic-gain-slider">Entrada do microfone</label>
                   <span id="mic-gain-label" class="captura-decibel-pill">100%</span>
                 </div>
                 <input type="range" class="form-range" id="mic-gain-slider" min="0" max="2" step="0.01" value="1">
@@ -187,7 +154,7 @@
 
               <div class="captura-advanced-grid">
                 <label class="captura-compact-field" for="fps-select">
-                  <span>Frame Rate</span>
+                  <span>Taxa de quadros</span>
                   <select id="fps-select" class="form-select form-select-sm">
                     <option value="15">15 fps</option>
                     <option value="30" selected>30 fps</option>
@@ -195,7 +162,7 @@
                   </select>
                 </label>
                 <label class="captura-compact-field" for="quality-select">
-                  <span>Quality</span>
+                  <span>Qualidade</span>
                   <select id="quality-select" class="form-select form-select-sm">
                     <option value="480">480p</option>
                     <option value="720" selected>720p</option>
@@ -203,11 +170,11 @@
                   </select>
                 </label>
                 <label class="captura-compact-field captura-compact-field-wide" for="format-select">
-                  <span>Format</span>
+                  <span>Formato</span>
                   <select id="format-select" class="form-select form-select-sm">
                     <option value="webm-vp9-opus" selected>WebM - VP9 + Opus</option>
                     <option value="mp4-h264-aac">MP4 - H.264 + AAC</option>
-                    <option value="mp3-audio-only">MP3 - audio only</option>
+                    <option value="mp3-audio-only">MP3 - somente áudio</option>
                   </select>
                 </label>
               </div>
@@ -217,417 +184,230 @@
           <div class="captura-record-actions">
             <button id="start-btn" class="captura-record-button">
               <i class="fas fa-circle"></i>
-              <span>Start Recording</span>
+              <span>Iniciar gravação</span>
             </button>
 
             <div class="captura-secondary-actions">
               <button id="pause-btn" class="btn btn-warning text-dark" hidden>
-                <i class="fas fa-pause me-1"></i>Pause
+                <i class="fas fa-pause me-1"></i>Pausar
               </button>
               <button id="stop-btn" class="btn btn-danger" hidden>
-                <i class="fas fa-stop me-1"></i>Stop
+                <i class="fas fa-stop me-1"></i>Parar
               </button>
               <button id="mic-toggle-btn" class="btn btn-outline-light" hidden>
-                <i class="fas fa-microphone-slash me-1"></i>Mute Mic
+                <i class="fas fa-microphone-slash me-1"></i>Silenciar microfone
               </button>
               <button id="end-session-btn" class="btn btn-outline-warning" hidden>
-                <i class="fas fa-times-circle me-1"></i>End Session
+                <i class="fas fa-times-circle me-1"></i>Encerrar sessão
               </button>
             </div>
           </div>
         </section>
-      </section>
 
-      <aside id="transcription-ui" class="captura-side-column">
-        <section class="captura-side-card captura-storage-card">
-          <div class="captura-side-heading">
-            <div>
-              <p class="captura-panel-kicker mb-1">Storage Location</p>
-              <p class="captura-side-subtitle mb-0">Select the folder used for recordings and transcript files.</p>
-            </div>
-          </div>
-
-          <div class="captura-storage-row">
-            <div class="captura-storage-name">
-              <i class="fas fa-folder"></i>
-              <span id="dir-name" class="text-truncate">(no folder selected)</span>
-            </div>
-            <button id="pick-dir-btn" class="captura-icon-button" type="button" aria-label="Choose folder">
-              <i class="fas fa-pen"></i>
-            </button>
-          </div>
-        </section>
-
-        <section id="captura-library-card" class="captura-side-card captura-library-card">
-          <div class="captura-side-heading">
-            <div>
-              <p class="captura-panel-kicker mb-1">Folder History</p>
-              <p id="library-summary" class="captura-side-subtitle mb-0">Select a folder to browse audio and video files.</p>
-            </div>
-            <button id="refresh-library-btn" class="captura-refresh-pill" type="button">
-              Refresh
-            </button>
-          </div>
-
-          <div class="captura-selected-preview">
-            <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
-              <span id="selected-media-label" class="captura-selected-name text-truncate">No file selected</span>
-              <span id="selected-media-kind" class="badge bg-secondary">Idle</span>
-            </div>
-
-            <video id="selected-video-player" class="w-100" controls hidden></video>
-            <audio id="selected-audio-player" class="w-100" controls hidden></audio>
-            <div id="media-preview-placeholder" class="captura-preview-placeholder text-muted small">
-              Select a file from the chosen folder to preview it and inspect the related transcript.
-            </div>
-          </div>
-
-          <div id="media-file-list" class="captura-file-list" aria-label="Media files in selected folder"></div>
-        </section>
-
-        <section id="captura-engine-card" class="captura-side-card captura-engine-card">
+        <section id="captura-engine-card" class="captura-side-card captura-engine-card captura-studio-panel">
           <div class="captura-side-heading align-items-start">
             <div>
-              <p class="captura-panel-kicker mb-1">AI Transcription Engine</p>
-              <div id="transcription-status" class="captura-inline-status small text-muted">No transcription running.</div>
+              <p class="captura-panel-kicker mb-1">Motor de IA</p>
+              <h2 class="captura-section-title mb-1">Configurações de automação</h2>
+              <div id="transcription-status" class="captura-inline-status small text-muted">Nenhuma transcrição em andamento.</div>
             </div>
-            <span id="live-transcript-badge" class="badge bg-secondary">Inactive</span>
+            <span id="live-transcript-badge" class="badge bg-secondary">Inativo</span>
           </div>
 
-          <details id="openai-panel" class="captura-details">
-            <summary>OpenAI API Key</summary>
-            <form id="openai-key-form" class="mt-3" autocomplete="on">
-              <input type="text" name="username" value="Captura OpenAI" autocomplete="username" hidden>
-              <div class="input-group input-group-sm">
-                <input
-                  id="openai-api-key"
-                  name="password"
-                  type="password"
-                  class="form-control"
-                  autocomplete="current-password"
-                  placeholder="sk-..."
-                  spellcheck="false"
-                >
-                <button id="openai-api-key-toggle" type="button" class="btn btn-outline-secondary">Show</button>
+          <div class="captura-studio-card-grid">
+            <details id="openai-panel" class="captura-details">
+              <summary>Chave da API da OpenAI</summary>
+              <form id="openai-key-form" class="mt-3" autocomplete="on">
+                <input type="text" name="username" value="Captura OpenAI" autocomplete="username" hidden>
+                <div class="input-group input-group-sm">
+                  <input
+                    id="openai-api-key"
+                    name="password"
+                    type="password"
+                    class="form-control"
+                    autocomplete="current-password"
+                    placeholder="sk-..."
+                    spellcheck="false"
+                  >
+                  <button id="openai-api-key-toggle" type="button" class="btn btn-outline-secondary">Mostrar</button>
+                </div>
+                <p class="captura-side-note mb-0 mt-2">
+                  A chave fica salva apenas nesta sessão do navegador. O Chrome pode memorizar via gerenciador de senhas.
+                </p>
+              </form>
+            </details>
+
+            <details id="transcription-settings-panel" class="captura-details">
+              <summary>Controles ao vivo</summary>
+              <div class="mt-3">
+                <label class="captura-toggle-row mb-3" for="live-transcription-chk">
+                  <span class="captura-field-label">
+                    <i class="fas fa-wave-square"></i>
+                    Ativar transcrição ao vivo
+                  </span>
+                  <span class="form-check form-switch m-0">
+                    <input class="form-check-input" type="checkbox" id="live-transcription-chk">
+                  </span>
+                </label>
               </div>
-              <p class="captura-side-note mb-0 mt-2">
-                The key stays in this browser session. Chrome can remember it through its password manager.
-              </p>
-            </form>
-          </details>
-
-          <details id="transcription-settings-panel" class="captura-details">
-            <summary>Prompt and Live Controls</summary>
-            <div class="mt-3">
-              <label class="captura-toggle-row mb-3" for="live-transcription-chk">
-                <span class="captura-field-label">
-                  <i class="fas fa-wave-square"></i>
-                  Enable Live Transcript
-                </span>
-                <span class="form-check form-switch m-0">
-                  <input class="form-check-input" type="checkbox" id="live-transcription-chk">
-                </span>
-              </label>
-
-              <label class="captura-field" for="transcription-prompt">
-                <span class="captura-field-label">Custom Prompt</span>
-                <textarea
-                  id="transcription-prompt"
-                  class="form-control form-control-sm"
-                  rows="5"
-                  placeholder="Summarize the main architectural decisions, preserve acronyms, and keep speaker filler words when useful."
-                ></textarea>
-              </label>
-            </div>
-          </details>
-
-          <div class="captura-engine-actions">
-            <button id="transcribe-selected-btn" class="captura-engine-button" disabled>
-              <i class="fas fa-file-waveform"></i>
-              <span>Generate Transcript</span>
-            </button>
-            <button id="transcribe-new-version-btn" class="captura-engine-secondary" disabled>
-              <i class="fas fa-copy"></i>
-              <span>New Version</span>
-            </button>
+            </details>
           </div>
-
-          <label class="captura-field" for="transcript-version-select">
-            <span class="captura-field-label">Transcript Version</span>
-            <select id="transcript-version-select" class="form-select form-select-sm" disabled>
-              <option value="">No transcript yet</option>
-            </select>
-          </label>
-
-          <div id="selected-transcript-status" class="captura-inline-status small text-muted">
-            Pick a file to load its transcript.
-          </div>
-
-          <label class="captura-field" for="transcript-viewer">
-            <span class="captura-field-label">Transcript Viewer</span>
-            <textarea
-              id="transcript-viewer"
-              class="form-control form-control-sm capturatranscript-textarea"
-              rows="9"
-              readonly
-              placeholder="The selected transcript will be displayed here."
-            ></textarea>
-          </label>
 
           <label class="captura-field" for="live-transcript-output">
-            <span class="captura-field-label">Live Transcript Output</span>
+            <span class="captura-field-label">Transcrição ao vivo</span>
             <textarea
               id="live-transcript-output"
               class="form-control form-control-sm capturatranscript-textarea"
               rows="8"
               readonly
-              placeholder="Live transcript updates will appear here during recording."
+              placeholder="As atualizações da transcrição ao vivo aparecerão aqui durante a gravação."
             ></textarea>
           </label>
         </section>
+      </section>
+
+      <aside id="transcription-ui" class="captura-side-column">
+        <section id="captura-library-card" class="captura-side-card captura-library-card captura-library-panel">
+          <div class="captura-side-heading captura-library-heading">
+            <div>
+              <p class="captura-panel-kicker mb-1">Arquivos</p>
+              <h2 class="captura-section-title mb-1">Arquivos recentes</h2>
+              <p id="library-summary" class="captura-side-subtitle mb-0">Selecione uma pasta para listar áudios e vídeos.</p>
+            </div>
+            <div class="captura-library-actions">
+              <button id="refresh-library-btn" class="captura-refresh-pill" type="button">
+                <i class="fas fa-rotate-right"></i>
+                <span>Atualizar</span>
+              </button>
+              <button id="pick-dir-btn" class="captura-engine-secondary" type="button">
+                <i class="fas fa-folder-open"></i>
+                <span>Escolher pasta</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="captura-storage-row captura-storage-row-compact">
+            <div class="captura-storage-name">
+              <i class="fas fa-folder"></i>
+              <span id="dir-name" class="text-truncate">(nenhuma pasta selecionada)</span>
+            </div>
+          </div>
+
+          <div id="media-file-list" class="captura-file-list" aria-label="Arquivos de mídia na pasta selecionada"></div>
+
+          <section id="media-detail-panel" class="captura-library-detail-panel" hidden>
+            <div class="captura-library-detail-grid">
+              <div class="captura-selected-preview">
+                <video id="selected-video-player" class="w-100" controls hidden></video>
+                <audio id="selected-audio-player" class="w-100" controls hidden></audio>
+                <div id="media-preview-placeholder" class="captura-preview-placeholder text-muted small">
+                  Selecione um arquivo da pasta para visualizar e inspecionar a transcrição relacionada.
+                </div>
+              </div>
+
+              <div class="captura-library-detail-actions">
+                <div class="captura-engine-actions">
+                  <button id="transcribe-selected-btn" class="captura-engine-button" disabled>
+                    <i class="fas fa-file-waveform"></i>
+                    <span>Gerar transcrição</span>
+                  </button>
+                  <button id="transcribe-new-version-btn" class="captura-engine-secondary" disabled>
+                    <i class="fas fa-copy"></i>
+                    <span>Nova versão</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <label class="captura-field captura-field-inline" for="transcript-version-select">
+              <span class="captura-field-label">Versão da transcrição</span>
+              <select id="transcript-version-select" class="form-select form-select-sm" disabled>
+                <option value="">Nenhuma transcrição ainda</option>
+              </select>
+            </label>
+
+            <div id="selected-transcript-status" class="captura-inline-status small text-muted">
+              Selecione um arquivo para carregar a transcrição.
+            </div>
+
+            <label class="captura-field" for="transcription-prompt">
+              <span class="captura-field-label">Prompt de transcrição</span>
+              <textarea
+                id="transcription-prompt"
+                class="form-control form-control-sm"
+                rows="4"
+                placeholder="Ex.: Preserve termos técnicos, siglas, nomes próprios e contexto específico desta mídia durante a transcrição."
+              ></textarea>
+            </label>
+
+            <label class="captura-field" for="transcript-viewer">
+              <span class="captura-field-label">Transcrição</span>
+              <textarea
+                id="transcript-viewer"
+                class="form-control form-control-sm capturatranscript-textarea"
+                rows="9"
+                readonly
+                placeholder="A transcrição selecionada será exibida aqui."
+              ></textarea>
+            </label>
+
+            <section class="captura-postprocess-card">
+              <div class="captura-side-heading align-items-start">
+                <div>
+                  <p class="captura-panel-kicker mb-1">Pós-processamento</p>
+                  <div id="postprocess-status" class="captura-inline-status small text-muted">
+                    Adicione um prompt opcional e processe a transcrição selecionada.
+                  </div>
+                </div>
+              </div>
+
+              <details id="postprocess-prompt-panel" class="captura-details captura-prompt-details">
+                <summary>Prompt de pós-processamento</summary>
+                <div class="mt-3">
+                  <label class="captura-field" for="postprocess-preset-select">
+                    <span class="captura-field-label">Prompts prontos</span>
+                    <select id="postprocess-preset-select" class="form-select form-select-sm">
+                      <option value="">Selecionar prompt padrão</option>
+                      <option value="meeting_minutes">Ata de reunião</option>
+                      <option value="legal">Linguagem jurídica</option>
+                      <option value="executive_summary">Resumo executivo</option>
+                    </select>
+                  </label>
+
+                  <label class="captura-field mb-0" for="postprocess-prompt">
+                    <span class="captura-field-label">Instrução de pós-processamento</span>
+                    <textarea
+                      id="postprocess-prompt"
+                      class="form-control form-control-sm"
+                      rows="4"
+                      placeholder="Ex.: Reescreva esta transcrição como uma ata objetiva, com decisões, pendências e próximos passos."
+                    ></textarea>
+                  </label>
+                </div>
+              </details>
+
+              <div class="captura-engine-actions">
+                <button id="process-selected-transcript-btn" class="captura-engine-button" disabled>
+                  <i class="fas fa-wand-magic-sparkles"></i>
+                  <span>Processar com IA</span>
+                </button>
+              </div>
+
+              <label class="captura-field" for="postprocess-output">
+                <span class="captura-field-label">Resultado reformulado</span>
+                <textarea
+                  id="postprocess-output"
+                  class="form-control form-control-sm capturatranscript-textarea captura-result-textarea"
+                  rows="10"
+                  readonly
+                  placeholder="O resultado processado aparecerá aqui."
+                ></textarea>
+              </label>
+            </section>
+          </section>
+        </section>
       </aside>
     </div>
-
-    <div class="captura-docs-stack">
-<!-- ── About ─────────────────────────────────────────────────────────────── -->
-<div id="captura-about" class="card google-anno-skip">
-  <div class="card-body">
-    <h5 class="card-title">About Captura Web Recorder</h5>
-    <p class="mb-2">
-      A browser-based screen recorder inspired by the original Captura desktop app.
-      Record your screen, mix in webcam and microphone audio, and save the result — all entirely
-      inside your browser. <strong>Recording stays local; only files or live audio sent for transcription leave the browser.</strong>
-    </p>
-
-    <h6 class="mt-3">Limitations vs. native desktop apps</h6>
-    <ul class="mb-2">
-      <li>
-        <strong>No global keystroke/key overlay</strong> — browsers deliberately sandbox each tab
-        and cannot listen to keyboard events outside the browser window. OS-level keyboard hooks
-        (used by the original Captura to show keystrokes on screen) are simply not available to
-        web pages. This is a fundamental security boundary of the web platform, and one of the
-        reasons native desktop apps still shine for certain capture workflows.
-      </li>
-      <li>
-        <strong>Desktop only</strong> — mobile browsers do not expose
-        <code>getDisplayMedia</code> because the mobile OS sandbox prevents web pages from
-        capturing other apps' screens. Use Chrome or Edge on a desktop.
-      </li>
-      <li>
-        <strong>WebM, MP4, or MP3 output</strong> — the recorder can produce a
-        <code>.webm</code> file (VP9 + Opus), an <code>.mp4</code> file (H.264 + AAC), or an
-        <code>.mp3</code> file (audio only) via the
-        <a href="https://github.com/Vanilagy/mediabunny" target="_blank" rel="noopener noreferrer">Mediabunny</a>
-        library (WebCodecs API). Select the desired format from the <em>Recording format</em>
-        dropdown before starting. The choice is saved for future visits.
-      </li>
-      <li>
-        <strong>File System Access API required</strong> — the recorder streams video directly to
-        disk using the File System Access API. It stores the chosen save folder in IndexedDB so
-        you only need to grant folder access once. This requires Chrome or Edge; Firefox does not
-        support this API and cannot be used to record.
-      </li>
-    </ul>
-
-    <h6 class="mt-3">Hardware media key &amp; OS media overlay support</h6>
-    <p class="mb-2">
-      Once a recording is started, the browser registers a
-      <a href="https://developer.mozilla.org/en-US/docs/Web/API/Media_Session_API" target="_blank" rel="noopener noreferrer">Media Session</a>
-      so you can control it from <strong>hardware media keys</strong> (play/pause/stop buttons on
-      keyboards, headsets, and remotes) or from the <strong>OS media overlay</strong> (e.g. the
-      Windows taskbar media controls or macOS Now Playing widget) — even when the browser tab is
-      not focused. The OS overlay shows the session as <em>"Captura Web – Recording Session
-      Active"</em> and stays in sync as you pause, resume, or stop the recording.
-    </p>
-
-    <div class="alert alert-info mb-0 py-2">
-      <i class="fas fa-shield-alt me-1"></i>
-      <strong>Privacy:</strong> Recording and saving remain local. If you use transcription, the selected audio is transmitted directly from this browser to the OpenAI API so a transcript can be generated.
-    </div>
-  </div>
-</div>
-
-<!-- ── Technical deep-dive ──────────────────────────────────────────────── -->
-<div id="captura-how-it-works" class="card mt-4 google-anno-skip">
-  <div class="card-body">
-    <h5 class="card-title">How It Works</h5>
-    <p class="text-muted small mb-4">
-      A look under the hood for the technically curious.
-    </p>
-
-    <h6><i class="fas fa-desktop me-1 text-muted"></i>Screen &amp; Window Capture</h6>
-    <p>
-      Screen capture uses the browser's <code>navigator.mediaDevices.getDisplayMedia()</code> API.
-      When you click <em>Start Recording</em>, the browser shows its own native picker where you
-      choose what to share — an entire screen, a specific window, or a browser tab. The browser
-      returns a <code>MediaStream</code> containing a video track (and optionally an audio track
-      if "Share system audio" is checked in the picker). This is intentional: the browser is
-      the gatekeeper, so no web page can silently capture your screen without your explicit
-      permission each time.
-    </p>
-    <p>
-      The system-audio checkbox in the recorder UI just passes <code>audio: true</code> as a
-      constraint to <code>getDisplayMedia</code>. Whether system audio is actually available
-      depends on the OS — Windows supports it natively; macOS requires a virtual audio driver.
-    </p>
-
-    <hr>
-
-    <h6><i class="fas fa-th-large me-1 text-muted"></i>Canvas Compositor</h6>
-    <p>
-      Rather than recording the screen stream directly, the recorder draws every frame onto an
-      offscreen <code>&lt;canvas&gt;</code> element. This intermediate step is what makes the
-      webcam picture-in-picture (PiP) overlay possible: each frame, the compositor first draws
-      the screen video, then draws the webcam video on top in the chosen corner, and finally
-      stamps a live timestamp in the bottom-right.
-    </p>
-    <p>
-      During recording the compositor runs in an async self-scheduling loop at your chosen frame
-      rate (e.g. every ~33 ms for 30 fps). After drawing each frame it calls
-      <code>canvasSource.add(timestamp)</code> from the Mediabunny library, which reads the
-      canvas pixels and submits them to the hardware video encoder. The call is <code>await</code>ed
-      so that if the encoder or disk I/O falls behind, the loop naturally slows down rather than
-      overflowing an unbounded queue (back-pressure). The loop is a plain async function rather
-      than <code>requestAnimationFrame</code> so that compositing continues reliably even when
-      the browser tab is hidden or you switch to another application.
-    </p>
-
-    <hr>
-
-    <h6><i class="fas fa-microphone me-1 text-muted"></i>Audio Mixing</h6>
-    <p>
-      System audio (from the screen capture) and microphone audio are two separate
-      <code>MediaStream</code>s. To combine them into a single audio track, the recorder uses the
-      Web Audio API:
-    </p>
-    <ol>
-      <li>An <code>AudioContext</code> is created.</li>
-      <li>Each source stream is wrapped in a <code>MediaStreamSourceNode</code>.</li>
-      <li>Each source node is routed through a <code>GainNode</code>, whose gain value is bound
-          to the corresponding slider in the <em>Audio Mix</em> panel. Moving a slider while
-          recording instantly changes the mix without any interruption.</li>
-      <li>Each gain node feeds into an <code>AnalyserNode</code> that is read every animation
-          frame to drive the live level meters in the UI. The RMS amplitude of the time-domain
-          samples is computed, scaled, and painted as a green/yellow/red bar — green up to 70 %
-          of full scale, yellow from 70–85 %, and red above 85 % — so you can confirm your mic
-          is live before committing to a long recording.</li>
-      <li>Both analyser nodes connect to a single <code>MediaStreamDestinationNode</code>.</li>
-      <li>The destination node exposes a mixed <code>MediaStream</code> whose audio track is then
-          passed to Mediabunny as a <code>MediaStreamAudioTrackSource</code>.</li>
-    </ol>
-    <p>
-      This approach lets the browser's audio engine handle the mixing in real time with no
-      additional libraries required. Gain and mixer settings are persisted to
-      <code>localStorage</code> so your preferred levels are restored on the next visit.
-    </p>
-
-    <hr>
-
-    <h6><i class="fas fa-save me-1 text-muted"></i>Streaming to Disk via File System Access API</h6>
-    <p>
-      A naive screen recorder would accumulate the entire recording in memory as a
-      <code>Blob</code> and only offer a download at the end. For long recordings this easily
-      consumes gigabytes of RAM and risks a browser crash. This recorder avoids that problem by
-      streaming compressed video data directly to a file on disk.
-    </p>
-    <p>
-      Before recording starts, the recorder asks for access to a <strong>folder</strong> of your
-      choice via <code>window.showDirectoryPicker()</code>. The chosen folder handle is stored in
-      <strong>IndexedDB</strong> so it persists across page reloads — you only need to pick a
-      folder once. A <em>Choose Folder</em> button in the settings panel lets you switch to a
-      different folder at any time.
-    </p>
-    <p>
-      When recording starts, the recorder verifies it still has write permission for the stored
-      folder using <code>FileSystemDirectoryHandle.queryPermission()</code>. If permission has
-      lapsed (e.g. after a browser restart), <code>requestPermission()</code> is called to prompt
-      you to re-grant it. If permission is denied, recording is cancelled gracefully.
-    </p>
-    <p>
-      Once access is confirmed, a new file named <code>recording-TIMESTAMP.webm</code> (or
-      <code>.mp4</code>, depending on the chosen format) is created
-      inside the chosen folder, and a <code>FileSystemWritableFileStream</code> is opened on it.
-      This writable stream is passed directly to Mediabunny's <code>StreamTarget</code>, which
-      writes encoded frames to disk incrementally as they are produced by the hardware encoder.
-      When recording stops, <code>output.finalize()</code> flushes the encoder, rewrites the
-      correct video duration into the file header, and closes the stream. Memory usage therefore
-      stays near-constant regardless of recording length, and the output file always has a valid
-      duration — unlike the truncated headers produced by the native <code>MediaRecorder</code> API.
-    </p>
-    <p>
-      This API is currently supported only in Chromium-based browsers (Chrome, Edge).
-      Firefox has not implemented it, which is why the recorder requires Chrome or Edge.
-    </p>
-
-    <hr>
-
-    <h6><i class="fas fa-keyboard me-1 text-muted"></i>Media Session API &amp; Hardware Media Keys</h6>
-    <p>
-      When recording starts, the recorder activates the browser's
-      <a href="https://developer.mozilla.org/en-US/docs/Web/API/Media_Session_API" target="_blank" rel="noopener noreferrer">Media Session API</a>
-      so that hardware media keys (play, pause, stop buttons on keyboards, headsets, and
-      remotes) and OS-level media overlays (e.g. the Windows taskbar or macOS Now Playing
-      widget) can control the recording even when the tab is in the background.
-    </p>
-    <p>
-      Chrome on macOS (and most Chromium-based browsers) only forwards media session
-      information to the OS — and only routes hardware key presses to the page — when a
-      Core Audio session is open. Chrome opens a Core Audio session only when an
-      <code>&lt;audio&gt;</code> or <code>&lt;video&gt;</code> element is playing with a
-      non-zero <code>volume</code>. Additionally, <code>srcObject</code> live streams have
-      infinite/unknown duration and are not forwarded to macOS Now Playing; a
-      file-backed <code>src</code> with a finite, loopable duration is required.
-    </p>
-    <p>
-      To satisfy both constraints without producing audible output, the recorder generates
-      a minimal 100 ms silent PCM WAV in memory, exposes it via a Blob URL, and plays it
-      on loop at <code>volume = 0.001</code> (−60 dBFS — 1/1,000th of full-scale amplitude,
-      inaudible in any realistic environment). This opens a Core Audio session,
-      registers the page with the macOS Now Playing widget, and activates hardware media
-      key forwarding. The Blob URL is revoked and the element removed when the session ends.
-    </p>
-    <p>
-      The handlers registered are <strong>play</strong> (resume a paused recording),
-      <strong>pause</strong> (pause an active recording), and <strong>stop</strong>
-      (stop the current recording). The OS media overlay is kept in sync by updating
-      <code>navigator.mediaSession.playbackState</code> to <code>'playing'</code>,
-      <code>'paused'</code>, or <code>'none'</code> whenever the recording state changes.
-      The silent audio element and the Media Session metadata are cleaned up when the
-      recording session ends.
-    </p>
-
-    <hr>
-
-    <h6><i class="fas fa-film me-1 text-muted"></i>Codec &amp; Container (Mediabunny)</h6>
-    <p>
-      The recorder supports two output formats, selectable from the <em>Recording format</em>
-      dropdown:
-    </p>
-    <ul>
-      <li>
-        <strong>WebM — VP9 + Opus:</strong> video encoded with <strong>VP9</strong>, audio with
-        <strong>Opus</strong> at 128 kbps, muxed into a <strong>WebM</strong> container.
-      </li>
-      <li>
-        <strong>MP4 — H.264 + AAC:</strong> video encoded with <strong>H.264 (AVC)</strong>,
-        audio with <strong>AAC</strong> at 128 kbps, muxed into an <strong>MP4</strong> container.
-        MP4 files are broadly compatible with most media players, devices, and video editors.
-      </li>
-    </ul>
-    <p>
-      Both formats are handled by the
-      <a href="https://github.com/Vanilagy/mediabunny" target="_blank" rel="noopener noreferrer">Mediabunny</a>
-      library, which drives the browser's hardware <code>VideoEncoder</code> and
-      <code>AudioEncoder</code> (WebCodecs API) directly and writes the muxed output
-      incrementally to the <code>FileSystemWritableFileStream</code> via its
-      <code>StreamTarget</code>. On finalization it rewrites the duration metadata at the
-      start of the file — a step that the native <code>MediaRecorder</code> API
-      skips, making its output unscrubbable in many players.
-    </p>
-  </div>
-</div>
-    </div>
-
     </div>
 </main>
 

@@ -1,20 +1,20 @@
 :root {
-  --captura-bg: #071125;
-  --captura-bg-2: #0b1630;
-  --captura-panel: #121f3d;
-  --captura-panel-2: #172648;
-  --captura-panel-3: #1d2d54;
+  --captura-bg: #081126;
+  --captura-bg-2: #0d1834;
+  --captura-panel: #101d3a;
+  --captura-panel-2: #152346;
+  --captura-panel-3: #1c2d54;
   --captura-border: rgba(137, 169, 255, 0.12);
   --captura-border-strong: rgba(83, 190, 255, 0.3);
   --captura-text: #eef3ff;
-  --captura-text-muted: #8fa1c8;
-  --captura-text-dim: #6f80a4;
-  --captura-accent: #44b7ff;
-  --captura-accent-2: #1fa3ff;
-  --captura-danger: #ff5b63;
-  --captura-danger-2: #ff6d6d;
+  --captura-text-muted: #9aaacd;
+  --captura-text-dim: #7080a2;
+  --captura-accent: #41bcff;
+  --captura-accent-2: #1597eb;
+  --captura-danger: #ff646d;
+  --captura-danger-2: #ff7a82;
   --captura-success: #4bd5b0;
-  --captura-shadow: 0 28px 60px rgba(1, 6, 18, 0.45);
+  --captura-shadow: 0 28px 60px rgba(1, 8, 24, 0.42);
 }
 
 body.captura-body {
@@ -23,9 +23,9 @@ body.captura-body {
   font-family: 'Plus Jakarta Sans', sans-serif;
   color: var(--captura-text);
   background:
-    radial-gradient(circle at top left, rgba(68, 183, 255, 0.14), transparent 24%),
-    radial-gradient(circle at top right, rgba(255, 91, 99, 0.08), transparent 20%),
-    linear-gradient(180deg, #071125 0%, #08101f 100%);
+    radial-gradient(circle at top left, rgba(65, 188, 255, 0.16), transparent 24%),
+    radial-gradient(circle at top right, rgba(125, 170, 255, 0.12), transparent 20%),
+    linear-gradient(180deg, #071022 0%, #08101f 100%);
 }
 
 .captura-body a {
@@ -34,8 +34,30 @@ body.captura-body {
 
 .captura-shell {
   min-height: 100vh;
-  display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 18px 28px 60px;
+}
+
+.captura-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 22px;
+  margin-bottom: 26px;
+  border-radius: 28px;
+  background: rgba(8, 17, 38, 0.84);
+  border: 1px solid rgba(137, 169, 255, 0.08);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 22px 55px rgba(1, 6, 18, 0.28);
+}
+
+.captura-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .captura-sidebar {
@@ -58,13 +80,17 @@ body.captura-body {
   gap: 14px;
 }
 
+.captura-brand-inline {
+  flex: 0 0 auto;
+}
+
 .captura-brand-mark {
-  width: 58px;
-  height: 58px;
+  width: 56px;
+  height: 56px;
   display: grid;
   place-items: center;
   border-radius: 18px;
-  background: linear-gradient(180deg, #41baff, #229ae7);
+  background: linear-gradient(180deg, #4dc2ff, #1f99e5);
   color: #fff;
   font-size: 1.35rem;
   box-shadow: 0 18px 40px rgba(36, 157, 232, 0.24);
@@ -82,7 +108,7 @@ body.captura-body {
 
 .captura-brand-title {
   color: var(--captura-accent);
-  font-size: 1.8rem;
+  font-size: 1.35rem;
   line-height: 1;
   font-weight: 700;
 }
@@ -90,7 +116,7 @@ body.captura-body {
 .captura-brand-subtitle {
   margin-top: 0.2rem;
   color: var(--captura-text-muted);
-  font-size: 0.82rem;
+  font-size: 0.76rem;
   font-weight: 500;
 }
 
@@ -158,12 +184,12 @@ body.captura-body {
 
 .captura-workspace {
   min-width: 0;
-  padding: 30px 28px 60px;
+  padding: 0;
 }
 
 .captura-workspace-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(340px, 430px);
+  grid-template-columns: minmax(360px, 0.88fr) minmax(520px, 1.12fr);
   gap: 28px;
   align-items: start;
 }
@@ -175,12 +201,12 @@ body.captura-body {
 
 .captura-main-column {
   display: grid;
-  gap: 22px;
+  gap: 24px;
 }
 
 .captura-side-column {
   display: grid;
-  gap: 18px;
+  gap: 22px;
 }
 
 .captura-session-header {
@@ -188,6 +214,7 @@ body.captura-body {
   align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
+  margin-bottom: 24px;
 }
 
 .captura-panel-kicker {
@@ -214,6 +241,13 @@ body.captura-body {
 .captura-page-subtitle {
   font-size: 1.05rem;
   max-width: 40rem;
+}
+
+.captura-section-title {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: clamp(1.65rem, 2vw, 2.35rem);
+  letter-spacing: -0.04em;
 }
 
 .captura-session-meta {
@@ -274,11 +308,9 @@ body.captura-body {
 
 .captura-stage-card,
 .captura-control-card,
-.captura-side-card,
-#captura-about.card,
-#captura-how-it-works.card {
+.captura-side-card {
   background:
-    linear-gradient(180deg, rgba(26, 39, 74, 0.94), rgba(15, 25, 48, 0.96)),
+    linear-gradient(180deg, rgba(22, 35, 67, 0.96), rgba(13, 22, 43, 0.98)),
     var(--captura-panel);
   border: 1px solid var(--captura-border);
   border-radius: 30px;
@@ -286,9 +318,7 @@ body.captura-body {
 }
 
 .captura-stage-card,
-.captura-side-card,
-#captura-about.card,
-#captura-how-it-works.card {
+.captura-side-card {
   padding: 28px;
 }
 
@@ -397,6 +427,7 @@ body.captura-body {
 .captura-field + .captura-field,
 .captura-slider-block + .captura-slider-block,
 .captura-details + .captura-details,
+.captura-field + .captura-details,
 .captura-field + .captura-inline-status,
 .captura-inline-status + .captura-field {
   margin-top: 16px;
@@ -467,14 +498,14 @@ body.captura-body {
   gap: 16px;
   border: none;
   border-radius: 30px;
-  background: linear-gradient(180deg, var(--captura-danger-2), var(--captura-danger));
-  color: #fff;
+  background: linear-gradient(180deg, #43b8fb, #2b9fe5);
+  color: #03223d;
   font-family: 'Space Grotesk', sans-serif;
   font-size: 1.45rem;
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  box-shadow: 0 24px 55px rgba(255, 91, 99, 0.26);
+  box-shadow: 0 24px 55px rgba(41, 162, 234, 0.3);
 }
 
 .captura-record-button i {
@@ -500,9 +531,29 @@ body.captura-body {
   font-weight: 700;
 }
 
+.captura-refresh-pill,
+.captura-engine-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
 .captura-secondary-actions .btn {
   min-height: 48px;
   padding: 0.78rem 1rem;
+}
+
+.captura-secondary-actions .captura-pause-button {
+  background: linear-gradient(180deg, #5a89ff, #406be0);
+  color: #f6f9ff;
+  border-color: rgba(147, 181, 255, 0.28);
+}
+
+.captura-secondary-actions .captura-pause-button.is-resume {
+  background: linear-gradient(180deg, #2fb9a4, #1f8f8d);
+  color: #edfffb;
+  border-color: rgba(91, 225, 208, 0.22);
 }
 
 .captura-secondary-actions .btn-warning,
@@ -530,6 +581,32 @@ body.captura-body {
   gap: 16px;
 }
 
+.captura-studio-panel {
+  padding: 28px;
+}
+
+.captura-studio-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.captura-library-panel {
+  padding: 28px;
+}
+
+.captura-library-heading {
+  align-items: flex-start;
+}
+
+.captura-library-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .captura-storage-row {
   display: flex;
   align-items: center;
@@ -538,6 +615,11 @@ body.captura-body {
   border-radius: 24px;
   background: rgba(7, 17, 37, 0.46);
   border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.captura-storage-row-compact {
+  padding: 14px 18px;
+  border-radius: 22px;
 }
 
 .captura-storage-name {
@@ -594,19 +676,20 @@ body.captura-body {
 
 .captura-file-list {
   display: grid;
-  gap: 12px;
-  max-height: 30rem;
-  overflow: auto;
-  padding-right: 4px;
+  gap: 14px;
 }
 
-.captura-file-list::-webkit-scrollbar {
-  width: 8px;
+.captura-library-entry {
+  display: grid;
+  gap: 14px;
 }
 
-.captura-file-list::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
+.captura-library-entry.is-active {
+  gap: 0;
+  border-radius: 28px;
+  background: rgba(25, 44, 86, 0.9);
+  border: 1px solid rgba(68, 183, 255, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(68, 183, 255, 0.08);
 }
 
 .captura-library-item,
@@ -622,6 +705,7 @@ body.captura-body {
 .captura-library-item {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 14px;
   padding: 14px;
   transition: 180ms ease;
@@ -634,8 +718,35 @@ body.captura-body {
   box-shadow: inset 0 0 0 1px rgba(68, 183, 255, 0.14);
 }
 
+.captura-library-entry.is-active .captura-library-item {
+  border: none;
+  border-radius: 28px 28px 0 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .captura-library-item:disabled {
   opacity: 0.6;
+}
+
+.captura-library-item-shell {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.captura-library-chevron {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--captura-text-muted);
+  flex: 0 0 auto;
 }
 
 .captura-library-thumb {
@@ -695,6 +806,43 @@ body.captura-body {
   color: var(--captura-text-muted);
 }
 
+.captura-library-detail-panel {
+  display: grid;
+  gap: 18px;
+  padding: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.captura-library-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.captura-library-detail-actions {
+  display: grid;
+  gap: 12px;
+}
+
+.captura-transcript-toolbar,
+.captura-field-inline {
+  display: grid;
+  gap: 10px;
+}
+
+.captura-postprocess-card {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 24px;
+  background: rgba(5, 12, 24, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.captura-result-textarea {
+  min-height: 14rem;
+}
+
 .captura-details {
   background: rgba(7, 17, 37, 0.42);
   border: 1px solid rgba(255, 255, 255, 0.05);
@@ -717,6 +865,10 @@ body.captura-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 10px;
+}
+
+.captura-library-detail-actions .captura-engine-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .captura-engine-button,
@@ -822,40 +974,6 @@ body.captura-body {
   color: var(--captura-accent);
 }
 
-.captura-docs-stack {
-  margin-top: 26px;
-  display: grid;
-  gap: 22px;
-}
-
-#captura-about.card .card-body,
-#captura-how-it-works.card .card-body {
-  padding: 0;
-}
-
-#captura-about.card,
-#captura-how-it-works.card {
-  color: var(--captura-text);
-}
-
-#captura-about.card p,
-#captura-about.card li,
-#captura-how-it-works.card p,
-#captura-how-it-works.card li {
-  color: var(--captura-text-muted);
-}
-
-#captura-about.card a,
-#captura-how-it-works.card a {
-  color: #81d3ff;
-}
-
-#captura-about .alert-info {
-  background: rgba(68, 183, 255, 0.12);
-  color: #bfeaff;
-  border: 1px solid rgba(68, 183, 255, 0.15);
-}
-
 /* ── Centered error/warning dialog ───────────────────────────────────────── */
 #captura-error-dialog {
   background: #121b32;
@@ -930,21 +1048,34 @@ body.captura-body {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .captura-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .captura-sidebar {
-    position: static;
-    height: auto;
-    border-right: none;
-    border-bottom: 1px solid rgba(137, 169, 255, 0.08);
+  .captura-header {
+    flex-wrap: wrap;
+    justify-content: space-between;
   }
 }
 
 @media (max-width: 860px) {
+  .captura-shell {
+    padding: 14px 14px 42px;
+  }
+
+  .captura-brand {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .captura-brand-title {
+    font-size: 1rem;
+    letter-spacing: 0.14em;
+  }
+
+  .captura-brand-subtitle {
+    font-size: 0.64rem;
+    letter-spacing: 0.12em;
+  }
+
   .captura-workspace {
-    padding: 22px 16px 42px;
+    padding: 0;
   }
 
   .captura-config-grid {
@@ -954,6 +1085,15 @@ body.captura-body {
   .captura-session-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .captura-header-actions {
+    justify-content: flex-start;
+  }
+
+  .captura-studio-card-grid,
+  .captura-library-detail-actions .captura-engine-actions {
+    grid-template-columns: 1fr;
   }
 
   .captura-stage-frame,
@@ -967,6 +1107,33 @@ body.captura-body {
     font-size: 1.12rem;
     letter-spacing: 0.12em;
   }
+
+  .captura-header {
+    padding: 16px;
+    border-radius: 24px;
+    align-items: flex-start;
+  }
+
+  .captura-library-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .captura-library-actions > * {
+    flex: 1 1 100%;
+  }
+
+  .captura-library-item {
+    align-items: flex-start;
+  }
+
+  .captura-library-item-shell {
+    align-items: flex-start;
+  }
+
+  .captura-header-actions {
+    width: 100%;
+  }
 }
 
 /* ── PWA standalone mode: hide sections irrelevant to the installed app ── */
@@ -974,9 +1141,7 @@ body.captura-body {
   nav.navbar,
   #tool-header,
   #tool-sidebar,
-  #tool-giscus-section,
-  #captura-about,
-  #captura-how-it-works {
+  #tool-giscus-section {
     display: none !important;
   }
 
