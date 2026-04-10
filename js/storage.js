@@ -39,7 +39,19 @@ function idbPut(db, key, value) {
 
 // Returns an ISO-8601-like timestamp safe for use in file names.
 export function dateStamp() {
-  return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const parts = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date());
+
+  const byType = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${byType.year}-${byType.month}-${byType.day}T${byType.hour}-${byType.minute}-${byType.second}`;
 }
 
 // ── StorageManager ────────────────────────────────────────────────────────────

@@ -60,6 +60,10 @@
           </span>
         </div>
         <canvas id="recorder-canvas" width="1280" height="720"></canvas>
+        <div class="mt-2 d-flex align-items-center justify-content-between gap-2 flex-wrap">
+          <span id="recording-estimate" class="text-muted small">1h estimate: 1.77 GB</span>
+          <span id="format-hint" class="text-muted small"></span>
+        </div>
         <div class="mt-3 d-flex gap-2 flex-wrap">
           <button id="start-btn" class="btn btn-info text-white">
             <i class="fas fa-circle me-1"></i>Start Recording
@@ -69,6 +73,9 @@
           </button>
           <button id="stop-btn" class="btn btn-danger" hidden>
             <i class="fas fa-stop me-1"></i>Stop
+          </button>
+          <button id="mic-toggle-btn" class="btn btn-outline-light" hidden>
+            <i class="fas fa-microphone-slash me-1"></i>Mute Mic
           </button>
           <button id="end-session-btn" class="btn btn-outline-warning" hidden>
             <i class="fas fa-times-circle me-1"></i>End Session
@@ -169,8 +176,11 @@
           <select id="format-select" class="form-select form-select-sm">
             <option value="webm-vp9-opus" selected>WebM — VP9 + Opus</option>
             <option value="mp4-h264-aac">MP4 — H.264 + AAC</option>
+            <option value="mp3-audio-only">MP3 — audio only</option>
           </select>
         </div>
+
+        <div id="long-recording-alert" class="alert alert-warning py-2 small mb-0" hidden></div>
 
       </div>
     </div><!-- /.row -->
@@ -203,8 +213,9 @@
         capturing other apps' screens. Use Chrome or Edge on a desktop.
       </li>
       <li>
-        <strong>WebM or MP4 output</strong> — the recorder can produce either a
-        <code>.webm</code> file (VP9 + Opus) or an <code>.mp4</code> file (H.264 + AAC) via the
+        <strong>WebM, MP4, or MP3 output</strong> — the recorder can produce a
+        <code>.webm</code> file (VP9 + Opus), an <code>.mp4</code> file (H.264 + AAC), or an
+        <code>.mp3</code> file (audio only) via the
         <a href="https://github.com/Vanilagy/mediabunny" target="_blank" rel="noopener noreferrer">Mediabunny</a>
         library (WebCodecs API). Select the desired format from the <em>Recording format</em>
         dropdown before starting. The choice is saved for future visits.

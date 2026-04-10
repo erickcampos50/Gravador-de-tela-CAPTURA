@@ -9,6 +9,7 @@ import { dateStamp } from './storage.js';
 const DEFAULT_WIDTH  = 1280;
 const DEFAULT_HEIGHT = 720;
 const FORMAT_MP4     = 'mp4-h264-aac';
+const FORMAT_MP3     = 'mp3-audio-only';
 
 const RESOLUTION_CONSTRAINTS = {
   '480':  { width: { ideal: 854  }, height: { ideal: 480  } },
@@ -65,6 +66,12 @@ export class RecorderAPI {
     return !!(this.#masterStream?.active &&
               this.#masterStream.getVideoTracks()[0]?.readyState === 'live');
   }
+  get hasActiveMic() {
+    return !!this.#micStream?.getAudioTracks().length;
+  }
+  get isMicMuted() {
+    return this.#audioMixer.isMicMuted;
+  }
 
   // ── Device configuration ──────────────────────────────────────────────────
 
@@ -84,8 +91,11 @@ export class RecorderAPI {
                          webcamSelected, webcamDeviceId,
                          micSelected, micDeviceId,
                          micGain, sysGain }) {
+    const isMp3       = format === FORMAT_MP3;
+    const wantsScreen = wantSysAudio || !isMp3;
+
     // 1 — Screen stream (reused when still live from a previous recording)
-    if (!this.hasSession) {
+    if (wantsScreen && !this.hasSession) {
       this.#masterStream = await navigator.mediaDevices.getDisplayMedia({
         video: {
           displaySurface: 'monitor',
@@ -103,15 +113,17 @@ export class RecorderAPI {
     }
 
     this.#compositor.screenVid.srcObject = this.#masterStream;
-    await this.#compositor.screenVid.play().catch(() => {});
+    if (this.#masterStream) {
+      await this.#compositor.screenVid.play().catch(() => {});
+    }
 
-    const settings      = this.#masterStream.getVideoTracks()[0]?.getSettings() ?? {};
+    const settings      = this.#masterStream?.getVideoTracks()[0]?.getSettings() ?? {};
     this.#canvas.width  = settings.width  || DEFAULT_WIDTH;
     this.#canvas.height = settings.height || DEFAULT_HEIGHT;
 
     // 2 — Webcam (stop any existing preview first to release the camera)
     this.#stopWebcamPreview();
-    if (webcamSelected) {
+    if (!isMp3 && webcamSelected) {
       const constraint = webcamDeviceId ? { deviceId: { exact: webcamDeviceId } } : true;
       this.#webcamStream = await navigator.mediaDevices.getUserMedia(
         { video: constraint, audio: false }
@@ -133,7 +145,7 @@ export class RecorderAPI {
     }
 
     // 4 — Validate system audio availability
-    const sysAudioTracks = this.#masterStream.getAudioTracks();
+    const sysAudioTracks = wantsScreen ? this.#masterStream?.getAudioTracks() ?? [] : [];
     if (wantSysAudio && sysAudioTracks.length === 0) {
       this.#releaseNonScreenStreams();
       const err = new Error(
@@ -143,6 +155,15 @@ export class RecorderAPI {
       );
       err.name  = 'SysAudioNotCaptured';
       err.title = 'System Audio Not Captured';
+      throw err;
+    }
+    if (isMp3 && sysAudioTracks.length === 0 && !this.#micStream?.getAudioTracks().length) {
+      this.#releaseNonScreenStreams();
+      const err = new Error(
+        'MP3 output requires at least one audio source. Enable system audio or select a microphone.'
+      );
+      err.name  = 'NoAudioSource';
+      err.title = 'No Audio Source';
       throw err;
     }
 
@@ -166,7 +187,7 @@ export class RecorderAPI {
       throw err;
     }
 
-    const ext        = format === FORMAT_MP4 ? 'mp4' : 'webm';
+    const ext        = format === FORMAT_MP4 ? 'mp4' : format === FORMAT_MP3 ? 'mp3' : 'webm';
     const fileHandle = await this.#storage.dirHandle.getFileHandle(
       `recording-${dateStamp()}.${ext}`, { create: true }
     );
@@ -178,7 +199,7 @@ export class RecorderAPI {
       canvas:         this.#canvas,
       mixedAudioTrack,
       writableStream: this.#writableStream,
-      isMp4:          format === FORMAT_MP4,
+      outputKind:     format,
       videoBitrate:   VIDEO_BITRATES[quality] ?? 4_000_000,
     });
     await this.#recorderCore.start();
@@ -191,7 +212,7 @@ export class RecorderAPI {
     this.#recordingStartTime     = performance.now();
     this.#totalPausedMs          = 0;
     this.#audioMixer.startSilentAudio();
-    this.#startLoop(fps);
+    if (this.#recorderCore.hasVideo) this.#startLoop(fps);
   }
 
   pauseEncoding() {
@@ -205,7 +226,7 @@ export class RecorderAPI {
     this.#totalPausedMs += performance.now() - this.#pauseStartTime;
     this.#recorderCore.resume();
     this.#audioMixer.resumeSilentAudio();
-    this.#startLoop(fps);
+    if (this.#recorderCore.hasVideo) this.#startLoop(fps);
   }
 
   // Stops the recording loop, flushes the encoder, closes the output file.
@@ -266,6 +287,12 @@ export class RecorderAPI {
       this.#compositor.drawFrame();
       await this.#recorderCore.addFrame((frameStart - startTime - paused()) / 1000);
     });
+  }
+
+  setMicMuted(muted) {
+    if (!this.hasActiveMic) return false;
+    this.#audioMixer.setMicMuted(muted);
+    return this.#audioMixer.isMicMuted;
   }
 
   // Releases webcam + mic recording streams and tears down the audio graph.

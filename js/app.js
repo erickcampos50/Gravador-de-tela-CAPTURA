@@ -23,6 +23,10 @@ import { trackEvent }                          from './analytics.js';
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const BLOB_URL_REVOKE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const FORMAT_MP3                = 'mp3-audio-only';
+const AUDIO_BITRATE             = 128_000;
+const VIDEO_BITRATES            = { '480': 2_000_000, '720': 4_000_000, '1080': 8_000_000 };
+const ONE_HOUR_SECONDS          = 60 * 60;
 
 // ── Formatters ─────────────────────────────────────────────────────────────────
 
@@ -31,6 +35,19 @@ const gainPct = v => Math.round(parseFloat(v) * 100) + '%';
 
 // Format elapsed seconds as MM:SS, e.g. 65 → '01:05'.
 const fmtTime = s => String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+const fmtBytes = bytes => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  const decimals = unitIndex === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  return value.toFixed(decimals) + ' ' + units[unitIndex];
+};
+const isMp3Format = format => format === FORMAT_MP3;
 
 // ── DOM refs ───────────────────────────────────────────────────────────────────
 
@@ -44,11 +61,15 @@ const sysAudioChk    = document.getElementById('sys-audio-chk');
 const startBtn       = document.getElementById('start-btn');
 const pauseBtn       = document.getElementById('pause-btn');
 const stopBtn        = document.getElementById('stop-btn');
+const micToggleBtn   = document.getElementById('mic-toggle-btn');
 const endSessionBtn  = document.getElementById('end-session-btn');
 const pickDirBtn     = document.getElementById('pick-dir-btn');
 const dirNameEl      = document.getElementById('dir-name');
 const statusBadge    = document.getElementById('status-badge');
 const timerEl        = document.getElementById('timer-text');
+const recordingEstimateEl = document.getElementById('recording-estimate');
+const formatHintEl        = document.getElementById('format-hint');
+const longRecordingAlertEl = document.getElementById('long-recording-alert');
 const micGainSlider  = document.getElementById('mic-gain-slider');
 const sysGainSlider  = document.getElementById('sys-gain-slider');
 const micGainLabel   = document.getElementById('mic-gain-label');
@@ -90,17 +111,25 @@ function startTimer() {
   clearInterval(timerIntervalId);
   elapsedSecs = 0;
   timerEl.textContent = '00:00';
-  timerIntervalId = setInterval(() => { timerEl.textContent = fmtTime(++elapsedSecs); }, 1000);
+  updateRecordingEstimate();
+  timerIntervalId = setInterval(() => {
+    timerEl.textContent = fmtTime(++elapsedSecs);
+    updateRecordingEstimate();
+  }, 1000);
 }
 
 function pauseTimer() {
   clearInterval(timerIntervalId);
   timerIntervalId = null;
+  updateRecordingEstimate();
 }
 
 function resumeTimer() {
   if (!timerIntervalId) {
-    timerIntervalId = setInterval(() => { timerEl.textContent = fmtTime(++elapsedSecs); }, 1000);
+    timerIntervalId = setInterval(() => {
+      timerEl.textContent = fmtTime(++elapsedSecs);
+      updateRecordingEstimate();
+    }, 1000);
   }
 }
 
@@ -109,6 +138,7 @@ function resetTimer() {
   timerIntervalId = null;
   elapsedSecs = 0;
   timerEl.textContent = '00:00';
+  updateRecordingEstimate();
 }
 
 // ── UI rendering ───────────────────────────────────────────────────────────────
@@ -124,7 +154,7 @@ function render(state) {
   const isStopping  = state === STATE.STOPPING;
   const isError     = state === STATE.ERROR;
   const active      = isRec || isPaused;               // recording or paused
-  const hasSession  = isSession || active || isStopping; // screen shared
+  const hasSession  = isSession || api.hasSession;
 
   // ── Recording control buttons ──────────────────────────────────────────────
 
@@ -144,6 +174,13 @@ function render(state) {
   stopBtn.hidden   = !active;
   stopBtn.disabled = false;
 
+  micToggleBtn.hidden   = !active || !api.hasActiveMic;
+  micToggleBtn.disabled = !active || !api.hasActiveMic;
+  micToggleBtn.innerHTML = api.isMicMuted
+    ? '<i class="fas fa-microphone me-1"></i>Unmute Mic'
+    : '<i class="fas fa-microphone-slash me-1"></i>Mute Mic';
+  micToggleBtn.className = api.isMicMuted ? 'btn btn-success' : 'btn btn-danger';
+
   // End Session: shown whenever a screen-share session is alive
   endSessionBtn.hidden   = !hasSession;
   endSessionBtn.disabled = isStopping || isReq;
@@ -153,11 +190,13 @@ function render(state) {
   // Locked while recording is active or a recording is being saved
   const lockControls = active || isStopping || isReq;
   pickDirBtn.disabled  = lockControls;
-  webcamSel.disabled   = lockControls;
+  const mp3Mode = isMp3Format(formatSel.value);
+  webcamSel.disabled   = lockControls || mp3Mode;
   micSel.disabled      = lockControls;
-  sysAudioChk.disabled = lockControls;
-  fpsSel.disabled      = lockControls;
-  qualitySel.disabled  = lockControls;
+  sysAudioChk.disabled = lockControls || !hasGetDisplayMedia;
+  fpsSel.disabled      = lockControls || mp3Mode;
+  qualitySel.disabled  = lockControls || mp3Mode;
+  formatSel.disabled   = lockControls;
 
   // ── Status badge ───────────────────────────────────────────────────────────
 
@@ -256,6 +295,8 @@ machine.onStateChange((state, event, payload) => {
     );
   }
 
+  refreshAdvisoryUi();
+
   // ── Keep stored device IDs in sync after non-recording state changes ───────
   if (state === STATE.IDLE || state === STATE.SESSION) {
     syncDevicesToApi();
@@ -265,9 +306,10 @@ machine.onStateChange((state, event, payload) => {
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function syncDevicesToApi() {
+  const mp3Mode = isMp3Format(formatSel.value);
   api.setDevices({
     webcamDeviceId: webcamSel.value,
-    webcamSelected: webcamSel.selectedIndex > 0,
+    webcamSelected: !mp3Mode && webcamSel.selectedIndex > 0,
     micDeviceId:    micSel.value,
     micSelected:    micSel.selectedIndex > 0,
   });
@@ -276,12 +318,13 @@ function syncDevicesToApi() {
 // Build the config payload for USER_START, reading current UI values.
 function buildStartPayload() {
   syncDevicesToApi();
+  const mp3Mode = isMp3Format(formatSel.value);
   return {
     fps:           fpsSel.value,
     quality:       qualitySel.value,
     format:        formatSel.value,
     wantSysAudio:  sysAudioChk.checked,
-    webcamSelected: webcamSel.selectedIndex > 0,
+    webcamSelected: !mp3Mode && webcamSel.selectedIndex > 0,
     webcamDeviceId: webcamSel.value,
     micSelected:   micSel.selectedIndex > 0,
     micDeviceId:   micSel.value,
@@ -311,6 +354,74 @@ async function showSaveSuccessToast(fileHandle) {
   showToast(msg, 'success');
 }
 
+function getExpectedAudioBitrate() {
+  return (micSel.selectedIndex > 0 || sysAudioChk.checked) ? AUDIO_BITRATE : 0;
+}
+
+function getExpectedTotalBitrate() {
+  if (isMp3Format(formatSel.value)) return getExpectedAudioBitrate();
+  return (VIDEO_BITRATES[qualitySel.value] ?? VIDEO_BITRATES['720']) + getExpectedAudioBitrate();
+}
+
+function getEstimateSeconds() {
+  const active = machine.state === STATE.RECORDING || machine.state === STATE.PAUSED;
+  return active ? elapsedSecs : ONE_HOUR_SECONDS;
+}
+
+function updateRecordingEstimate() {
+  const bitrate = getExpectedTotalBitrate();
+  if (!recordingEstimateEl) return;
+  if (bitrate <= 0) {
+    recordingEstimateEl.textContent = isMp3Format(formatSel.value)
+      ? 'Select a microphone or enable system audio for MP3.'
+      : 'Select audio sources to include them in the estimate.';
+    return;
+  }
+
+  const label = (machine.state === STATE.RECORDING || machine.state === STATE.PAUSED)
+    ? 'Estimated file size'
+    : '1h estimate';
+  const estimatedBytes = (bitrate / 8) * getEstimateSeconds();
+  recordingEstimateEl.textContent = `${label}: ${fmtBytes(estimatedBytes)}`;
+}
+
+function updateFormatHint() {
+  if (!formatHintEl) return;
+  if (!isMp3Format(formatSel.value)) {
+    formatHintEl.textContent = '';
+    return;
+  }
+
+  formatHintEl.textContent = sysAudioChk.checked
+    ? 'MP3 with system audio still requires screen share.'
+    : micSel.selectedIndex > 0
+      ? 'MP3 records microphone only and skips screen share.'
+      : 'MP3 needs a microphone or system audio enabled.';
+}
+
+function updateLongRecordingAlert() {
+  if (!longRecordingAlertEl) return;
+
+  if (isMp3Format(formatSel.value)) {
+    longRecordingAlertEl.hidden = true;
+    longRecordingAlertEl.textContent = '';
+    return;
+  }
+
+  const heavyVideoProfile = qualitySel.value !== '480' || fpsSel.value !== '15' || webcamSel.selectedIndex > 0;
+  longRecordingAlertEl.hidden = false;
+  longRecordingAlertEl.className = `alert ${heavyVideoProfile ? 'alert-warning' : 'alert-info'} py-2 small mb-0`;
+  longRecordingAlertEl.textContent = heavyVideoProfile
+    ? 'Long meeting? This video setup can produce large files. For safer long recordings, prefer 480p at 15 fps, disable webcam if optional, or switch to MP3 when you only need audio.'
+    : 'This is the lightest video profile available here. MP3 will still use much less space if the meeting only needs audio.';
+}
+
+function refreshAdvisoryUi() {
+  updateFormatHint();
+  updateLongRecordingAlert();
+  updateRecordingEstimate();
+}
+
 // ── Device enumeration ────────────────────────────────────────────────────────
 
 async function enumerateDevices() {
@@ -326,6 +437,7 @@ async function enumerateDevices() {
     audioDevs.forEach((d, i) => micSel.add(new Option(d.label || `Microphone ${i + 1}`, d.deviceId)));
 
     restoreDevicePrefs();
+    refreshAdvisoryUi();
 
     // Restart previews only when not actively recording
     const s = machine.state;
@@ -388,13 +500,10 @@ function restoreDevicePrefs() {
 
 if (!hasGetDisplayMedia) {
   showAlert(
-    'Screen recording is not supported on this device. ' +
-    'Mobile browsers run inside a security sandbox that prevents access to the device screen — ' +
-    'this is where native desktop apps still shine. ' +
-    'Please open this page on a desktop browser (Chrome or Edge) to use the recorder.',
+    'Screen capture is not available in this browser. ' +
+    'Video recording and system-audio capture are unavailable here, but MP3 microphone-only recording can still work.',
     'warning'
   );
-  document.getElementById('recorder-ui').hidden = true;
 } else if (!hasFSA) {
   showAlert(
     'Your browser does not support the File System Access API, which this recorder requires to ' +
@@ -405,6 +514,9 @@ if (!hasGetDisplayMedia) {
 }
 
 restoreSimplePrefs();
+if (!hasGetDisplayMedia) sysAudioChk.checked = false;
+refreshAdvisoryUi();
+render(machine.state);
 
 trackEvent('captura_page_view', {
   has_screen_capture:  hasGetDisplayMedia,
@@ -425,12 +537,10 @@ if (hasFSA) storage.init();
 
 // Recording controls → dispatch state machine events only; no logic inline.
 startBtn.addEventListener('click', () => {
-  if (!hasGetDisplayMedia) {
+  if (!hasGetDisplayMedia && (!isMp3Format(formatSel.value) || sysAudioChk.checked)) {
     showErrorDialog(
       'Not Supported',
-      'Screen recording is not supported on this device. ' +
-      'Mobile browsers cannot access the device screen due to security sandbox restrictions. ' +
-      'Please use a desktop browser with screen-recording support (Chrome, Edge, or Firefox) to use the recorder.'
+      'This browser cannot capture the screen. Use MP3 with microphone only, or switch to a desktop browser with screen-capture support.'
     );
     return;
   }
@@ -446,6 +556,11 @@ pauseBtn.addEventListener('click', () => {
 });
 
 stopBtn.addEventListener('click', () => machine.transition(EVENT.USER_STOP));
+micToggleBtn.addEventListener('click', () => {
+  const muted = api.setMicMuted(!api.isMicMuted);
+  trackEvent('captura_mic_toggle', { muted });
+  render(machine.state);
+});
 
 endSessionBtn.addEventListener('click', () => machine.transition(EVENT.END_SESSION));
 
@@ -465,6 +580,8 @@ errorDialog?.addEventListener('close', () => {
 function saveAndTrackPref(key, value, analyticsKey) {
   savePref(key, value);
   trackEvent('captura_pref_change', { pref: analyticsKey, value: String(value) });
+  refreshAdvisoryUi();
+  render(machine.state);
 }
 
 fpsSel     .addEventListener('change', () => saveAndTrackPref(PREFS.fps,      fpsSel.value,          'fps'));
@@ -474,6 +591,7 @@ sysAudioChk.addEventListener('change', () => saveAndTrackPref(PREFS.sysAudio, sy
 
 webcamSel.addEventListener('change', () => {
   savePref(PREFS.webcam, webcamSel.value);
+  refreshAdvisoryUi();
   const s = machine.state;
   if (s !== STATE.RECORDING && s !== STATE.PAUSED && s !== STATE.STOPPING) {
     syncDevicesToApi();
@@ -483,6 +601,7 @@ webcamSel.addEventListener('change', () => {
 
 micSel.addEventListener('change', () => {
   savePref(PREFS.mic, micSel.value);
+  refreshAdvisoryUi();
   const s = machine.state;
   if (s !== STATE.RECORDING && s !== STATE.PAUSED && s !== STATE.STOPPING) {
     syncDevicesToApi();
