@@ -32,28 +32,19 @@
   <div class="captura-dialog-content">
     <button type="button" class="captura-dialog-close" id="captura-error-close" aria-label="Fechar">&times;</button>
     <h5 id="captura-error-title" class="captura-dialog-title"></h5>
+    <div id="captura-error-illustration-wrap" class="captura-dialog-illustration" hidden>
+      <img
+        id="captura-error-illustration"
+        class="captura-dialog-illustration-img"
+        alt="Animação instrutiva para ativar o áudio do sistema"
+        data-src="./images/ativar som do sistema.gif"
+      >
+    </div>
     <p id="captura-error-body" class="captura-dialog-body"></p>
   </div>
 </dialog>
 
 <main class="captura-shell">
-  <header class="captura-header google-anno-skip">
-    <div class="captura-brand captura-brand-inline">
-      <div class="captura-brand-mark">
-        <i class="fas fa-wave-square"></i>
-      </div>
-      <div>
-        <div class="captura-brand-title">Gravador de Reuniões</div>
-        <div class="captura-brand-subtitle">Grave, transcreva e revise reuniões</div>
-      </div>
-    </div>
-
-    <div class="captura-header-actions">
-      <span id="status-badge" class="badge bg-secondary">Inativo</span>
-      <span id="timer-text" class="captura-timer-pill">00:00</span>
-    </div>
-  </header>
-
   <div id="tool-main-content" class="captura-workspace">
     <div class="captura-session-header google-anno-skip">
       <div>
@@ -74,10 +65,12 @@
               </div>
               <div class="captura-stage-actions">
                 <span id="format-hint" class="captura-stage-support"></span>
-                <button type="button" class="captura-stage-expand" aria-label="Expandir pré-visualização">
-                  <i class="fas fa-expand"></i>
-                </button>
               </div>
+            </div>
+
+            <div class="captura-stage-meta">
+              <span id="status-badge" class="badge bg-secondary">Inativo</span>
+              <span id="timer-text" class="captura-timer-pill">00:00</span>
             </div>
 
             <div class="captura-stage-frame">

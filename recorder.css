@@ -304,6 +304,15 @@ body.captura-body ::selection {
   flex-wrap: wrap;
 }
 
+.captura-stage-meta {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .captura-stage-frame {
   position: relative;
   overflow: hidden;
@@ -323,24 +332,6 @@ body.captura-body ::selection {
   display: block;
   background: #050607;
   border-radius: inherit;
-}
-
-.captura-stage-expand {
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--captura-border);
-  border-radius: 14px;
-  background: var(--captura-surface);
-  color: var(--captura-text);
-  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
-}
-
-.captura-stage-expand:hover {
-  border-color: rgba(0, 102, 204, 0.25);
-  box-shadow: var(--captura-shadow-soft);
-  transform: translateY(-1px);
 }
 
 .captura-stage-play {
@@ -563,7 +554,6 @@ body.captura-body ::selection {
 .captura-refresh-pill:hover,
 .captura-engine-secondary:hover,
 .captura-record-button:hover,
-.captura-stage-expand:hover,
 .captura-icon-button:hover {
   transform: translateY(-1px);
   box-shadow: var(--captura-shadow-soft);
@@ -1010,7 +1000,6 @@ body.captura-body ::selection {
 .captura-engine-button:focus,
 .captura-engine-secondary:focus,
 .captura-refresh-pill:focus,
-.captura-stage-expand:focus,
 .captura-glass-button:focus,
 #openai-api-key-toggle:focus {
   border-color: rgba(0, 102, 204, 0.55);
@@ -1198,7 +1187,7 @@ body.captura-body ::selection {
 }
 
 #captura-error-dialog {
-  width: min(92vw, 520px);
+  width: min(92vw, 560px);
   padding: 0;
   border: 1px solid rgba(210, 210, 215, 0.92);
   border-radius: 24px;
@@ -1215,12 +1204,32 @@ body.captura-body ::selection {
 .captura-dialog-content {
   position: relative;
   padding: 1.5rem 1.75rem;
+  display: grid;
+  gap: 0.95rem;
+  max-height: min(90vh, 720px);
+  overflow: auto;
 }
 
 .captura-dialog-title {
   margin: 0 2rem 0.75rem 0;
   font-size: 1.05rem;
   font-weight: 650;
+}
+
+.captura-dialog-illustration {
+  overflow: hidden;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(0, 102, 204, 0.08) 0%, rgba(255, 255, 255, 0.92) 100%);
+  border: 1px solid rgba(210, 210, 215, 0.72);
+  box-shadow: var(--captura-shadow-soft);
+}
+
+.captura-dialog-illustration-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 350px;
+  object-fit: contain;
 }
 
 .captura-dialog-body {
@@ -1406,6 +1415,10 @@ body.captura-body ::selection {
   .captura-session-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .captura-stage-meta {
+    justify-content: flex-start;
   }
 
   .captura-config-grid,

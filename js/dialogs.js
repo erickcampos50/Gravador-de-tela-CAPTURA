@@ -3,8 +3,11 @@
 
 const alertBox    = document.getElementById('alert-box');
 const errorDialog = document.getElementById('captura-error-dialog');
+const errorIllustrationWrap = document.getElementById('captura-error-illustration-wrap');
+const errorIllustrationImg  = document.getElementById('captura-error-illustration');
 
 const TOAST_FADE_MS = 150;
+const SYS_AUDIO_NOT_CAPTURED = 'SysAudioNotCaptured';
 
 export function showAlert(msgOrNode, type) {
   alertBox.className = 'alert alert-' + type + ' mb-3';
@@ -53,10 +56,19 @@ export function showToast(msgOrNode, type, autohide = true) {
   }
 }
 
-export function showErrorDialog(title, message) {
+export function showErrorDialog(title, message, error = null) {
   if (!errorDialog) { showAlert(message, 'danger'); return; }
   document.getElementById('captura-error-title').textContent = title;
   document.getElementById('captura-error-body').textContent  = message;
+  if (errorIllustrationWrap && errorIllustrationImg) {
+    const showIllustration = error?.name === SYS_AUDIO_NOT_CAPTURED;
+    errorIllustrationWrap.hidden = !showIllustration;
+    errorIllustrationImg.hidden = !showIllustration;
+    if (showIllustration && !errorIllustrationImg.getAttribute('src')) {
+      const illustrationSrc = errorIllustrationImg.dataset.src || '';
+      if (illustrationSrc) errorIllustrationImg.src = illustrationSrc;
+    }
+  }
   errorDialog.showModal();
 }
 

@@ -149,21 +149,21 @@ export class RecorderAPI {
     if (wantSysAudio && sysAudioTracks.length === 0) {
       this.#releaseNonScreenStreams();
       const err = new Error(
-        'System audio was not captured. In the browser share dialog, make sure to enable ' +
-        '"Share system audio" (or "Share tab audio"). ' +
-        'Click "End Session" and try again, or uncheck "Capture system audio" to record without it.'
-      );
+        'O áudio do sistema não foi capturado. Na janela de compartilhamento do navegador, certifique-se de ativar ' +
+        '"Compartilhar áudio do sistema" (ou "Compartilhar áudio da aba"). ' +
+        'Clique em "Encerrar sessão" e tente novamente, ou desmarque "Capturar áudio do sistema" para gravar sem ele.'
+        );
       err.name  = 'SysAudioNotCaptured';
-      err.title = 'System Audio Not Captured';
+      err.title = 'Áudio do Sistema Não Capturado';
       throw err;
     }
     if (isMp3 && sysAudioTracks.length === 0 && !this.#micStream?.getAudioTracks().length) {
       this.#releaseNonScreenStreams();
       const err = new Error(
-        'MP3 output requires at least one audio source. Enable system audio or select a microphone.'
+        'A saída em MP3 requer pelo menos uma fonte de áudio. Ative o áudio do sistema ou selecione um microfone.'
       );
       err.name  = 'NoAudioSource';
-      err.title = 'No Audio Source';
+      err.title = 'Nenhuma Fonte de Áudio';
       throw err;
     }
 

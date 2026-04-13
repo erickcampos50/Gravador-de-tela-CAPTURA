@@ -627,7 +627,7 @@ function handleTranscriptionError(error, {
   if (updateTranscriptPane) setSelectedTranscriptStatus(message, 'danger');
 
   if (toast) showToast(message, 'danger');
-  if (dialog) showErrorDialog(title, message);
+  if (dialog) showErrorDialog(title, message, error);
   if (error instanceof OpenAIConfigError) openOpenAiPanel();
 }
 
@@ -1169,7 +1169,8 @@ machine.onStateChange((state, event, payload) => {
   if (state === STATE.ERROR) {
     showErrorDialog(
       payload?.title   || 'Erro de gravação',
-      payload?.message || String(payload ?? 'Ocorreu um erro desconhecido.')
+      payload?.message || String(payload ?? 'Ocorreu um erro desconhecido.'),
+      payload
     );
   }
 
@@ -1325,7 +1326,7 @@ async function enumerateDevices() {
       api.restartPreviews();
     }
   } catch (err) {
-    showErrorDialog('Erro de dispositivos', 'Não foi possível listar os dispositivos: ' + err.message);
+    showErrorDialog('Erro de dispositivos', 'Não foi possível listar os dispositivos: ' + err.message, err);
   }
 }
 
