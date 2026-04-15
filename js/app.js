@@ -21,8 +21,14 @@ import { RecorderStateMachine, STATE, EVENT }    from './recorder-state-machine.
 import { trackEvent }                            from './analytics.js';
 import { MediaLibrary, isVideoFileName }         from './media-library.js';
 import {
+  AssemblyAIClientManager,
+  AssemblyAIConfigError,
+  DEFAULT_POSTPROCESS_MODEL,
   OpenAIClientManager,
   OpenAIConfigError,
+  POSTPROCESS_MODELS,
+  TRANSCRIPTION_ENGINES,
+  TRANSCRIPTION_ENGINE_LABELS,
   TRANSCRIPTION_OUTPUT_MODES,
   TRANSCRIPTION_OUTPUT_MODE_LABELS,
 } from './openai-client.js';
@@ -47,7 +53,6 @@ const STATUS_CLASS = {
   warning: 'text-warning',
   danger:  'text-danger',
 };
-const POSTPROCESS_MODEL = 'gpt-5.4-mini';
 const DEFAULT_POSTPROCESS_PROMPT = 'Reescreva a transcrição em português do Brasil, com clareza, boa fluidez e preservando o sentido original. Retorne apenas o texto final.';
 const POSTPROCESS_PROMPT_PRESETS = {
   meeting_minutes: 'Reescreva esta transcrição como uma ata de reunião em português do Brasil. Estruture em: contexto, participantes citados quando identificáveis, decisões tomadas, pendências, responsáveis e próximos passos. Use linguagem objetiva e profissional.',
@@ -106,10 +111,13 @@ const sysLevelCanvas = document.getElementById('sys-level-canvas');
 const errorDialog    = document.getElementById('captura-error-dialog');
 
 const openAiPanel            = document.getElementById('openai-panel');
-const transcriptionPanel     = document.getElementById('transcription-settings-panel');
+const assemblyAiPanel        = document.getElementById('assemblyai-panel');
 const openAiKeyForm          = document.getElementById('openai-key-form');
 const openAiApiKeyInput      = document.getElementById('openai-api-key');
 const openAiApiKeyToggleBtn  = document.getElementById('openai-api-key-toggle');
+const assemblyAiKeyForm      = document.getElementById('assemblyai-key-form');
+const assemblyAiApiKeyInput  = document.getElementById('assemblyai-api-key');
+const assemblyAiApiKeyToggleBtn = document.getElementById('assemblyai-api-key-toggle');
 const liveTranscriptionChk   = document.getElementById('live-transcription-chk');
 const transcriptionPromptEl  = document.getElementById('transcription-prompt');
 const transcriptionModeSel   = document.getElementById('transcription-mode-select');
@@ -136,6 +144,8 @@ const postProcessPromptEl    = document.getElementById('postprocess-prompt');
 const postProcessOutputEl    = document.getElementById('postprocess-output');
 const postProcessCopyBtn     = document.getElementById('postprocess-copy-btn');
 const postProcessSaveBtn     = document.getElementById('postprocess-save-btn');
+const transcriptionEngineInputs = Array.from(document.querySelectorAll('input[name="transcription-engine"]'));
+const postProcessModelInputs = Array.from(document.querySelectorAll('input[name="postprocess-model"]'));
 
 // ── Capability checks ──────────────────────────────────────────────────────────
 
@@ -153,9 +163,14 @@ const audioMixer     = new AudioMixer(micLevelCanvas, sysLevelCanvas);
 const storage        = new StorageManager(dirNameEl, showErrorDialog);
 const recorderCore   = new RecorderCore();
 const openAiClient   = new OpenAIClientManager(openAiApiKeyInput);
+const assemblyAiClient = new AssemblyAIClientManager(assemblyAiApiKeyInput);
 const mediaLibrary   = new MediaLibrary(storage);
+const transcriptionClients = {
+  [TRANSCRIPTION_ENGINES.openai]: openAiClient,
+  [TRANSCRIPTION_ENGINES.assemblyai]: assemblyAiClient,
+};
 const transcriptionController = new TranscriptionController({
-  clientManager: openAiClient,
+  getClientManager: engine => transcriptionClients[engine] || transcriptionClients[TRANSCRIPTION_ENGINES.assemblyai],
   mediaLibrary,
   onLiveUpdate: ({ text }) => {
     liveTranscriptOutputEl.value = text;
@@ -191,7 +206,7 @@ function extractPostProcessResponseText(data) {
   return parts.join('\n\n').trim();
 }
 
-async function fallbackPostProcessText({ text, prompt = '', signal } = {}) {
+async function fallbackPostProcessText({ text, prompt = '', signal, model = DEFAULT_POSTPROCESS_MODEL } = {}) {
   const apiKey = openAiClient.assertConfigured();
   const transcriptText = text?.trim() || '';
   if (!transcriptText) {
@@ -205,7 +220,7 @@ async function fallbackPostProcessText({ text, prompt = '', signal } = {}) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: POSTPROCESS_MODEL,
+      model,
       input: [
         {
           role: 'developer',
@@ -346,6 +361,39 @@ function openOpenAiPanel() {
   savePref(PREFS.openAiPanelOpen, 'true');
 }
 
+function openAssemblyAiPanel() {
+  assemblyAiPanel.open = true;
+  savePref(PREFS.assemblyAiPanelOpen, 'true');
+}
+
+function getSelectedTranscriptionEngine() {
+  const selected = transcriptionEngineInputs.find(input => input.checked);
+  return selected?.value || TRANSCRIPTION_ENGINES.assemblyai;
+}
+
+function getSelectedPostProcessModel() {
+  const selected = postProcessModelInputs.find(input => input.checked);
+  return POSTPROCESS_MODELS.includes(selected?.value) ? selected.value : DEFAULT_POSTPROCESS_MODEL;
+}
+
+function getTranscriptionClient(engine = getSelectedTranscriptionEngine()) {
+  return transcriptionClients[engine] || transcriptionClients[TRANSCRIPTION_ENGINES.assemblyai];
+}
+
+function getSelectedEngineLabel(engine = getSelectedTranscriptionEngine()) {
+  return TRANSCRIPTION_ENGINE_LABELS[engine] || engine;
+}
+
+function getSupportedTranscriptionModes(client = getTranscriptionClient()) {
+  return client?.supportedModes instanceof Set
+    ? client.supportedModes
+    : new Set(Object.values(TRANSCRIPTION_OUTPUT_MODES));
+}
+
+function isTranscriptionModeSupported(mode, client = getTranscriptionClient()) {
+  return getSupportedTranscriptionModes(client).has(mode);
+}
+
 function getTranscriptionMode() {
   return transcriptionModeSel?.value || TRANSCRIPTION_OUTPUT_MODES.plain;
 }
@@ -355,10 +403,13 @@ function isDiarizationTranscriptionMode() {
 }
 
 function getLiveTranscriptionPrompt() {
-  return transcriptionPromptEl.value.trim();
+  return getTranscriptionClient()?.supportsPrompt === false
+    ? ''
+    : transcriptionPromptEl.value.trim();
 }
 
 function getFileTranscriptionPrompt() {
+  if (getTranscriptionClient()?.supportsPrompt === false) return '';
   return isDiarizationTranscriptionMode() ? '' : transcriptionPromptEl.value.trim();
 }
 
@@ -366,14 +417,45 @@ function isLiveTranscriptionEnabled() {
   return liveTranscriptionChk.checked;
 }
 
+function updateTranscriptionUiCapabilities() {
+  const client = getTranscriptionClient();
+  const supportedModes = getSupportedTranscriptionModes(client);
+  const supportsPrompt = client?.supportsPrompt !== false;
+
+  Array.from(transcriptionModeSel.options).forEach(option => {
+    option.disabled = !supportedModes.has(option.value);
+  });
+
+  if (!supportedModes.has(getTranscriptionMode())) {
+    transcriptionModeSel.value = supportedModes.has(TRANSCRIPTION_OUTPUT_MODES.plain)
+      ? TRANSCRIPTION_OUTPUT_MODES.plain
+      : Array.from(supportedModes)[0] || TRANSCRIPTION_OUTPUT_MODES.plain;
+    savePref(PREFS.transcriptionMode, transcriptionModeSel.value);
+  }
+
+  transcriptionPromptEl.placeholder = supportsPrompt
+    ? 'Ex.: Preserve termos técnicos, siglas, nomes próprios e contexto específico desta mídia durante a transcrição.'
+    : 'Disponível quando o motor OpenAI estiver selecionado.';
+}
+
 function updateTranscriptionModeHint() {
   if (!transcriptionModeHintEl) return;
+
+  const client = getTranscriptionClient();
+  const engineLabel = getSelectedEngineLabel();
+  if (client?.engine === TRANSCRIPTION_ENGINES.assemblyai) {
+    transcriptionModeHintEl.textContent =
+      getTranscriptionMode() === TRANSCRIPTION_OUTPUT_MODES.diarized
+        ? 'Usa AssemblyAI com rótulos dos participantes por turno.'
+        : 'AssemblyAI fica em texto normal aqui e mantém a diarização disponível quando você precisar.';
+    return;
+  }
 
   transcriptionModeHintEl.textContent =
     getTranscriptionMode() === TRANSCRIPTION_OUTPUT_MODES.timestamps
       ? 'Gera um texto legível com timestamps por segmento.'
       : getTranscriptionMode() === TRANSCRIPTION_OUTPUT_MODES.diarized
-        ? 'Gera speaker labels por segmento. Neste modo, o prompt de transcrição é ignorado apenas no fluxo de arquivo.'
+        ? 'Gera rótulos dos participantes por segmento. Neste modo, o prompt de transcrição é ignorado apenas no fluxo de arquivo.'
         : 'Mantém a transcrição em texto simples, como hoje.';
 }
 
@@ -629,6 +711,7 @@ function handleTranscriptionError(error, {
   if (toast) showToast(message, 'danger');
   if (dialog) showErrorDialog(title, message, error);
   if (error instanceof OpenAIConfigError) openOpenAiPanel();
+  if (error instanceof AssemblyAIConfigError) openAssemblyAiPanel();
 }
 
 async function loadMediaPreview(mediaEntry) {
@@ -750,11 +833,13 @@ async function transcribeSelectedMedia({ alwaysVersion = false } = {}) {
   if (!selectedMediaEntry) return;
   const mediaName = selectedMediaEntry.name;
   const mediaHandle = selectedMediaEntry.handle;
+  const engine = getSelectedTranscriptionEngine();
+  const engineLabel = getSelectedEngineLabel(engine);
   const mode = getTranscriptionMode();
   const modeLabel = TRANSCRIPTION_OUTPUT_MODE_LABELS[mode] || TRANSCRIPTION_OUTPUT_MODE_LABELS.plain;
 
   try {
-    openAiClient.assertConfigured();
+    getTranscriptionClient(engine).assertConfigured();
   } catch (error) {
     handleTranscriptionError(error, {
       toast: false,
@@ -768,18 +853,20 @@ async function transcribeSelectedMedia({ alwaysVersion = false } = {}) {
   trackEvent('captura_transcription_start', {
     file_name: mediaName,
     force_new_version: alwaysVersion,
+    engine,
     mode,
   });
   transcriptionBusy = true;
   renderMediaFileList();
   render(machine.state);
-  setSelectedTranscriptStatus(`Preparando ${mediaName} para transcrição em ${modeLabel}…`, 'muted');
-  setTranscriptionStatus(`Preparando ${mediaName} para transcrição em ${modeLabel}…`, 'muted');
+  setSelectedTranscriptStatus(`Preparando ${mediaName} para transcrição em ${modeLabel} com ${engineLabel}…`, 'muted');
+  setTranscriptionStatus(`Preparando ${mediaName} para transcrição em ${modeLabel} com ${engineLabel}…`, 'muted');
 
   try {
     const result = await transcriptionController.transcribeFileHandle(mediaHandle, {
       prompt: getFileTranscriptionPrompt(),
       alwaysVersion,
+      engine,
       mode,
       onProgress: payload => {
         if (payload?.message) {
@@ -794,6 +881,7 @@ async function transcribeSelectedMedia({ alwaysVersion = false } = {}) {
     setTranscriptionStatus(`Transcrição salva como ${result.fileName}.`, 'success');
     trackEvent('captura_transcription_saved', {
       file_name: mediaName,
+      engine,
       transcript_name: result.fileName,
       mode,
     });
@@ -803,7 +891,7 @@ async function transcribeSelectedMedia({ alwaysVersion = false } = {}) {
       silent: true,
     });
   } catch (error) {
-    trackEvent('captura_transcription_error', { file_name: mediaName });
+    trackEvent('captura_transcription_error', { file_name: mediaName, engine });
     handleTranscriptionError(error, {
       toast: true,
       dialog: false,
@@ -836,14 +924,16 @@ async function processSelectedTranscript() {
   const transcriptName = transcriptVersionSel.value;
   const transcriptText = transcriptViewerEl.value.trim();
   const cacheKey = getSelectedTranscriptCacheKey();
+  const postProcessModel = getSelectedPostProcessModel();
 
   postProcessingBusy = true;
   renderMediaFileList();
   render(machine.state);
-  setPostProcessStatus(`Processando ${transcriptName} com a OpenAI…`, 'muted');
-  setTranscriptionStatus(`Processando ${transcriptName} com a OpenAI…`, 'muted');
+  setPostProcessStatus(`Processando ${transcriptName} com ${postProcessModel}…`, 'muted');
+  setTranscriptionStatus(`Processando ${transcriptName} com ${postProcessModel}…`, 'muted');
   trackEvent('captura_postprocess_start', {
     file_name: selectedMediaEntry.name,
+    model: postProcessModel,
     transcript_name: transcriptName,
   });
 
@@ -851,6 +941,7 @@ async function processSelectedTranscript() {
     const result = await postProcessText({
       text: transcriptText,
       prompt: postProcessPromptEl.value,
+      model: postProcessModel,
     });
 
     if (cacheKey) postProcessResultsByTranscript.set(cacheKey, result);
@@ -860,12 +951,14 @@ async function processSelectedTranscript() {
     setTranscriptionStatus(`Pós-processamento concluído para ${transcriptName}.`, 'success');
     trackEvent('captura_postprocess_saved', {
       file_name: selectedMediaEntry.name,
+      model: postProcessModel,
       transcript_name: transcriptName,
     });
   } catch (error) {
     setPostProcessStatus(error.message || 'Falha no pós-processamento.', 'danger');
     trackEvent('captura_postprocess_error', {
       file_name: selectedMediaEntry.name,
+      model: postProcessModel,
       transcript_name: transcriptName,
     });
     handleTranscriptionError(error, {
@@ -887,8 +980,11 @@ async function startLiveTranscriptionForRecording() {
     return;
   }
 
+  const engine = getSelectedTranscriptionEngine();
+  const engineLabel = getSelectedEngineLabel(engine);
+
   try {
-    openAiClient.assertConfigured();
+    getTranscriptionClient(engine).assertConfigured();
   } catch (error) {
     setLiveTranscriptBadge('Chave necessária', 'badge bg-danger');
     handleTranscriptionError(error, {
@@ -909,15 +1005,17 @@ async function startLiveTranscriptionForRecording() {
 
   liveTranscriptOutputEl.value = '';
   setLiveTranscriptBadge('Iniciando', 'badge bg-info');
-  setTranscriptionStatus('Iniciando transcrição ao vivo…', 'muted');
+  setTranscriptionStatus(`Iniciando transcrição ao vivo com ${engineLabel}…`, 'muted');
 
   try {
     await transcriptionController.startLiveTranscription({
       track,
       prompt: getLiveTranscriptionPrompt(),
+      engine,
+      mediaFileName: api.activeFileHandle?.name || '',
     });
     setLiveTranscriptBadge('Ouvindo', 'badge bg-success');
-    trackEvent('captura_live_transcription_start');
+    trackEvent('captura_live_transcription_start', { engine });
   } catch (error) {
     track.stop();
     setLiveTranscriptBadge('Erro', 'badge bg-danger');
@@ -952,26 +1050,32 @@ async function finalizeSavedRecordingTranscript(fileHandle) {
 
   transcriptionBusy = true;
   recordingTranscriptInFlight = true;
-  const mode = getTranscriptionMode();
+  const engine = getSelectedTranscriptionEngine();
+  const engineLabel = getSelectedEngineLabel(engine);
+  const requestedMode = getTranscriptionMode();
+  const mode = isTranscriptionModeSupported(requestedMode, getTranscriptionClient(engine))
+    ? requestedMode
+    : TRANSCRIPTION_OUTPUT_MODES.plain;
   const modeLabel = TRANSCRIPTION_OUTPUT_MODE_LABELS[mode] || TRANSCRIPTION_OUTPUT_MODE_LABELS.plain;
   renderMediaFileList();
   render(machine.state);
   setLiveTranscriptBadge('Finalizando', 'badge bg-info');
-  setTranscriptionStatus(`Transcrevendo a gravação salva em ${modeLabel}…`, 'muted');
+  setTranscriptionStatus(`Transcrevendo a gravação salva em ${modeLabel} com ${engineLabel}…`, 'muted');
 
   let preferredTranscriptName = '';
 
   try {
     const liveText = await pendingLiveStopPromise;
     if (liveText.trim()) {
-      const liveResult = await mediaLibrary.writeTranscript(fileHandle.name, liveText, { variant: 'live' });
+      const liveResult = await mediaLibrary.writeTranscriptIncremental(fileHandle.name, liveText, { variant: 'live' });
       preferredTranscriptName = liveResult.fileName;
       setTranscriptionStatus(`Transcrição ao vivo salva como ${liveResult.fileName}.`, 'success');
-      trackEvent('captura_live_transcript_saved', { transcript_name: liveResult.fileName });
+      trackEvent('captura_live_transcript_saved', { engine, transcript_name: liveResult.fileName });
     }
 
     const result = await transcriptionController.transcribeFileHandle(fileHandle, {
       prompt: getFileTranscriptionPrompt(),
+      engine,
       mode,
       onProgress: payload => {
         if (payload?.message) setTranscriptionStatus(payload.message, 'muted');
@@ -982,7 +1086,7 @@ async function finalizeSavedRecordingTranscript(fileHandle) {
     showToast(`Transcrição salva como ${result.fileName}.`, 'success');
     setTranscriptionStatus(`Transcrição salva como ${result.fileName}.`, 'success');
     setLiveTranscriptBadge('Salvo', 'badge bg-success');
-    trackEvent('captura_recording_transcript_saved', { transcript_name: result.fileName, mode });
+    trackEvent('captura_recording_transcript_saved', { engine, transcript_name: result.fileName, mode });
 
     await refreshMediaLibrary({
       preferredMediaName: fileHandle.name,
@@ -1023,6 +1127,8 @@ function render(state) {
   const isError     = state === STATE.ERROR;
   const active      = isRec || isPaused;
   const hasSession  = isSession || api.hasSession;
+  const selectedTranscriptionClient = getTranscriptionClient();
+  const promptSupported = selectedTranscriptionClient?.supportsPrompt !== false;
 
   startBtn.hidden   = active || isStopping;
   startBtn.disabled = isReq;
@@ -1061,10 +1167,12 @@ function render(state) {
   qualitySel.disabled     = lockControls || mp3Mode;
   formatSel.disabled      = lockControls;
   liveTranscriptionChk.disabled = lockControls;
-  transcriptionPromptEl.disabled = lockControls;
+  transcriptionPromptEl.disabled = lockControls || !promptSupported;
   transcriptionModeSel.disabled = lockControls;
   openAiApiKeyInput.disabled = lockControls;
   openAiApiKeyToggleBtn.disabled = lockControls;
+  assemblyAiApiKeyInput.disabled = lockControls;
+  assemblyAiApiKeyToggleBtn.disabled = lockControls;
   refreshLibraryBtn.disabled = lockControls || !storage.dirHandle;
   transcribeSelectedBtn.disabled = lockControls || !selectedMediaEntry;
   transcribeNewVersionBtn.disabled = lockControls || !selectedMediaEntry;
@@ -1072,6 +1180,8 @@ function render(state) {
   processSelectedTranscriptBtn.disabled = lockControls || !hasSelectedTranscript;
   postProcessPromptEl.disabled = lockControls;
   postProcessPresetSel.disabled = lockControls;
+  transcriptionEngineInputs.forEach(input => { input.disabled = lockControls; });
+  postProcessModelInputs.forEach(input => { input.disabled = lockControls; });
   updatePostProcessActionButtons({ lockControls });
 
   statusBadge.textContent =
@@ -1374,6 +1484,12 @@ function restoreSimplePrefs() {
     liveTranscriptionChk.checked = liveTranscriptionPref === 'true';
   }
 
+  const savedTranscriptionEngine = loadPref(PREFS.transcriptionEngine);
+  if (savedTranscriptionEngine) {
+    const selectedEngineInput = transcriptionEngineInputs.find(input => input.value === savedTranscriptionEngine);
+    if (selectedEngineInput) selectedEngineInput.checked = true;
+  }
+
   const savedPrompt = loadPref(PREFS.transcriptionPrompt);
   if (savedPrompt !== null) transcriptionPromptEl.value = savedPrompt;
 
@@ -1382,11 +1498,18 @@ function restoreSimplePrefs() {
     transcriptionModeSel.value = savedTranscriptionMode;
   }
 
+  const savedPostProcessModel = loadPref(PREFS.postProcessModel);
+  if (savedPostProcessModel) {
+    const selectedPostProcessModel = postProcessModelInputs.find(input => input.value === savedPostProcessModel);
+    if (selectedPostProcessModel) selectedPostProcessModel.checked = true;
+  }
+
   const savedPostProcessPrompt = loadPref(PREFS.postProcessPrompt);
   if (savedPostProcessPrompt !== null) postProcessPromptEl.value = savedPostProcessPrompt;
 
   restoreDetailsPref(openAiPanel, PREFS.openAiPanelOpen);
-  restoreDetailsPref(transcriptionPanel, PREFS.transcriptionPanelOpen);
+  restoreDetailsPref(assemblyAiPanel, PREFS.assemblyAiPanelOpen);
+  updateTranscriptionUiCapabilities();
   updateTranscriptionModeHint();
 }
 
@@ -1516,6 +1639,7 @@ postProcessPresetSel.addEventListener('change', () => {
 });
 
 openAiKeyForm?.addEventListener('submit', event => event.preventDefault());
+assemblyAiKeyForm?.addEventListener('submit', event => event.preventDefault());
 
 openAiApiKeyToggleBtn.addEventListener('click', () => {
   const reveal = openAiApiKeyInput.type === 'password';
@@ -1523,12 +1647,18 @@ openAiApiKeyToggleBtn.addEventListener('click', () => {
   openAiApiKeyToggleBtn.textContent = reveal ? 'Ocultar' : 'Mostrar';
 });
 
+assemblyAiApiKeyToggleBtn.addEventListener('click', () => {
+  const reveal = assemblyAiApiKeyInput.type === 'password';
+  assemblyAiApiKeyInput.type = reveal ? 'text' : 'password';
+  assemblyAiApiKeyToggleBtn.textContent = reveal ? 'Ocultar' : 'Mostrar';
+});
+
 openAiPanel.addEventListener('toggle', () => {
   savePref(PREFS.openAiPanelOpen, String(openAiPanel.open));
 });
 
-transcriptionPanel.addEventListener('toggle', () => {
-  savePref(PREFS.transcriptionPanelOpen, String(transcriptionPanel.open));
+assemblyAiPanel.addEventListener('toggle', () => {
+  savePref(PREFS.assemblyAiPanelOpen, String(assemblyAiPanel.open));
 });
 
 liveTranscriptionChk.addEventListener('change', () => {
@@ -1544,11 +1674,30 @@ transcriptionPromptEl.addEventListener('input', () => {
   savePref(PREFS.transcriptionPrompt, transcriptionPromptEl.value);
 });
 
+transcriptionEngineInputs.forEach(input => {
+  input.addEventListener('change', () => {
+    if (!input.checked) return;
+    savePref(PREFS.transcriptionEngine, input.value);
+    trackEvent('captura_pref_change', { pref: 'transcription_engine', value: input.value });
+    updateTranscriptionUiCapabilities();
+    updateTranscriptionModeHint();
+    render(machine.state);
+  });
+});
+
 transcriptionModeSel.addEventListener('change', () => {
   savePref(PREFS.transcriptionMode, transcriptionModeSel.value);
   trackEvent('captura_pref_change', { pref: 'transcription_mode', value: transcriptionModeSel.value });
   updateTranscriptionModeHint();
   render(machine.state);
+});
+
+postProcessModelInputs.forEach(input => {
+  input.addEventListener('change', () => {
+    if (!input.checked) return;
+    savePref(PREFS.postProcessModel, input.value);
+    trackEvent('captura_pref_change', { pref: 'postprocess_model', value: input.value });
+  });
 });
 
 postProcessPromptEl.addEventListener('input', () => {

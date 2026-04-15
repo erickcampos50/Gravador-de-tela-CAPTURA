@@ -1,7 +1,11 @@
 import { FFmpeg } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js';
 import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/esm/index.js';
 import { isVideoFileName } from './media-library.js';
-import { TRANSCRIPTION_OUTPUT_MODES, TRANSCRIPTION_OUTPUT_MODE_SUFFIXES } from './openai-client.js';
+import {
+  TRANSCRIPTION_ENGINE_LABELS,
+  TRANSCRIPTION_OUTPUT_MODES,
+  TRANSCRIPTION_OUTPUT_MODE_SUFFIXES,
+} from './openai-client.js';
 
 const SAFE_UPLOAD_BYTES = 24 * 1024 * 1024;
 const LIVE_CHUNK_MS = 10_000;
@@ -273,6 +277,8 @@ async function getFfmpeg(onProgress) {
 
 class RollingTranscriptionSession {
   #clientManager;
+  #mediaLibrary;
+  #mediaFileName = '';
   #prompt = '';
   #audioContext = null;
   #sourceNode = null;
@@ -287,12 +293,15 @@ class RollingTranscriptionSession {
   #processing = Promise.resolve();
   #chunkIndex = 0;
   #transcript = '';
+  #snapshotWrite = Promise.resolve();
   #onUpdate;
   #onStatus;
   #onError;
 
-  constructor({ clientManager, onUpdate, onStatus, onError }) {
+  constructor({ clientManager, mediaLibrary, mediaFileName = '', onUpdate, onStatus, onError }) {
     this.#clientManager = clientManager;
+    this.#mediaLibrary = mediaLibrary;
+    this.#mediaFileName = mediaFileName;
     this.#onUpdate = onUpdate;
     this.#onStatus = onStatus;
     this.#onError = onError;
@@ -355,6 +364,7 @@ class RollingTranscriptionSession {
     this.#paused = true;
     await this.#flushChunk(true);
     await this.#processing;
+    await this.#snapshotWrite;
     this.#processorNode.onaudioprocess = null;
     this.#sourceNode?.disconnect();
     this.#processorNode?.disconnect();
@@ -404,12 +414,20 @@ class RollingTranscriptionSession {
 
     this.#transcript = mergeTranscriptText(this.#transcript, text);
     this.#onUpdate?.({ text: this.transcript, latestSegment: text, source: 'live' });
+    this.#snapshotWrite = this.#snapshotWrite
+      .then(async () => {
+        if (!this.#mediaLibrary || !this.#mediaFileName || !this.transcript) return;
+        await this.#mediaLibrary.writeTranscriptIncremental(this.#mediaFileName, this.transcript, { variant: 'live' });
+      })
+      .catch(error => {
+        this.#onError?.(error);
+      });
     this.#onStatus?.({ stage: 'live', message: 'Transcrição ao vivo atualizada.' });
   }
 }
 
 export class TranscriptionController {
-  #clientManager;
+  #clientManagerResolver;
   #mediaLibrary;
   #liveSession = null;
   #liveTranscript = '';
@@ -417,8 +435,8 @@ export class TranscriptionController {
   #onStatus;
   #onError;
 
-  constructor({ clientManager, mediaLibrary, onLiveUpdate, onStatus, onError }) {
-    this.#clientManager = clientManager;
+  constructor({ getClientManager, mediaLibrary, onLiveUpdate, onStatus, onError }) {
+    this.#clientManagerResolver = getClientManager;
     this.#mediaLibrary = mediaLibrary;
     this.#onLiveUpdate = onLiveUpdate;
     this.#onStatus = onStatus;
@@ -429,12 +447,25 @@ export class TranscriptionController {
     return this.#liveTranscript.trim();
   }
 
-  async startLiveTranscription({ track, prompt = '' }) {
+  #resolveClientManager(engine = '') {
+    const clientManager = typeof this.#clientManagerResolver === 'function'
+      ? this.#clientManagerResolver(engine)
+      : this.#clientManagerResolver;
+    if (!clientManager) {
+      throw new Error('Nenhum motor de transcrição está configurado.');
+    }
+    return clientManager;
+  }
+
+  async startLiveTranscription({ track, prompt = '', engine = '', mediaFileName = '' }) {
     await this.stopLiveTranscription();
     this.#liveTranscript = '';
+    const clientManager = this.#resolveClientManager(engine);
 
     const session = new RollingTranscriptionSession({
-      clientManager: this.#clientManager,
+      clientManager,
+      mediaLibrary: this.#mediaLibrary,
+      mediaFileName,
       onUpdate: payload => {
         this.#liveTranscript = payload.text;
         this.#onLiveUpdate?.(payload);
@@ -463,9 +494,9 @@ export class TranscriptionController {
     return this.liveTranscript;
   }
 
-  async transcribeFileHandle(fileHandle, { prompt = '', alwaysVersion = false, onProgress, mode = TRANSCRIPTION_OUTPUT_MODES.plain } = {}) {
+  async transcribeFileHandle(fileHandle, { prompt = '', alwaysVersion = false, onProgress, mode = TRANSCRIPTION_OUTPUT_MODES.plain, engine = '' } = {}) {
     const file = await fileHandle.getFile();
-    const result = await this.transcribeFile(file, { prompt, onProgress, mode });
+    const result = await this.transcribeFile(file, { prompt, onProgress, mode, engine });
     const savedTranscript = await this.#mediaLibrary.writeTranscript(file.name, result.text, {
       alwaysVersion,
       suffix: TRANSCRIPTION_OUTPUT_MODE_SUFFIXES[mode] || '',
@@ -473,16 +504,25 @@ export class TranscriptionController {
     return { ...result, ...savedTranscript };
   }
 
-  async transcribeFile(file, { prompt = '', onProgress, mode = TRANSCRIPTION_OUTPUT_MODES.plain } = {}) {
+  async transcribeFile(file, { prompt = '', onProgress, mode = TRANSCRIPTION_OUTPUT_MODES.plain, engine = '' } = {}) {
     if (!(file instanceof File)) throw new Error('Nenhum arquivo foi selecionado para transcrição.');
 
+    const clientManager = this.#resolveClientManager(engine);
+    const supportedModes = clientManager?.supportedModes instanceof Set
+      ? clientManager.supportedModes
+      : new Set(Object.values(TRANSCRIPTION_OUTPUT_MODES));
     const needsNormalization = file.size > SAFE_UPLOAD_BYTES || isVideoMediaFile(file);
     const structuredMode = mode === TRANSCRIPTION_OUTPUT_MODES.timestamps || mode === TRANSCRIPTION_OUTPUT_MODES.diarized;
+    const engineLabel = TRANSCRIPTION_ENGINE_LABELS[clientManager.engine] || 'selecionado';
+
+    if (!supportedModes.has(mode)) {
+      throw new Error(`O motor ${engineLabel} não suporta o modo ${TRANSCRIPTION_OUTPUT_MODE_LABELS[mode] || mode} nesta aplicação.`);
+    }
 
     if (!structuredMode) {
       if (!needsNormalization) {
-        onProgress?.({ stage: 'uploading', message: `Enviando ${file.name} para a OpenAI…` });
-        const text = await this.#clientManager.transcribeFile({ file, prompt });
+        onProgress?.({ stage: 'uploading', message: `Enviando ${file.name} para ${engineLabel}…` });
+        const text = await clientManager.transcribeFile({ file, prompt });
         return { text: text.trim(), mode };
       }
 
@@ -504,7 +544,7 @@ export class TranscriptionController {
           current: index + 1,
           total: chunks.length,
         });
-        const chunkText = await this.#clientManager.transcribeFile({ file: chunk, prompt: chunkPrompt });
+        const chunkText = await clientManager.transcribeFile({ file: chunk, prompt: chunkPrompt });
         transcript = mergeTranscriptText(transcript, chunkText);
       }
 
@@ -512,8 +552,8 @@ export class TranscriptionController {
     }
 
     if (!needsNormalization) {
-      onProgress?.({ stage: 'uploading', message: `Enviando ${file.name} para a OpenAI…` });
-      const result = await this.#clientManager.transcribeFileDetailed({ file, prompt, mode });
+      onProgress?.({ stage: 'uploading', message: `Enviando ${file.name} para ${engineLabel}…` });
+      const result = await clientManager.transcribeFileDetailed({ file, prompt, mode });
       const segments = normalizeStructuredSegments(result.segments);
       const text = segments.length
         ? formatStructuredTranscript(segments, { includeSpeaker: mode === TRANSCRIPTION_OUTPUT_MODES.diarized })
@@ -546,7 +586,7 @@ export class TranscriptionController {
         total: chunks.length,
       });
 
-      const chunkResult = await this.#clientManager.transcribeFileDetailed({
+      const chunkResult = await clientManager.transcribeFileDetailed({
         file: chunk.file,
         prompt: chunkPrompt,
         mode,
@@ -582,7 +622,7 @@ export class TranscriptionController {
         stage: 'preparing',
         message: isVideoMediaFile(file)
           ? 'Extraindo e compactando o áudio do vídeo…'
-          : 'Compactando áudio para envio à OpenAI…',
+          : 'Compactando áudio para envio ao motor selecionado…',
       });
       await ffmpeg.exec([
         '-i', inputName,

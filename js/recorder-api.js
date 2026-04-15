@@ -72,6 +72,9 @@ export class RecorderAPI {
   get isMicMuted() {
     return this.#audioMixer.isMicMuted;
   }
+  get activeFileHandle() {
+    return this.#savedFileHandle;
+  }
 
   // ── Device configuration ──────────────────────────────────────────────────
 

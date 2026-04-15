@@ -362,6 +362,57 @@ body.captura-body ::selection {
   font-size: 0.88rem;
 }
 
+.captura-live-inline-panel {
+  margin-top: 10px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(210, 210, 215, 0.7);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.captura-live-inline-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.captura-live-inline-summary::-webkit-details-marker {
+  display: none;
+}
+
+.captura-live-inline-title {
+  color: var(--captura-text);
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.captura-live-inline-summary::after {
+  content: '⌄';
+  margin-left: auto;
+  color: var(--captura-text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  transition: transform 160ms ease;
+}
+
+.captura-live-inline-summary #live-transcript-badge {
+  order: 1;
+}
+
+.captura-live-inline-panel[open] .captura-live-inline-summary::after {
+  transform: rotate(180deg);
+}
+
+.captura-live-inline-content {
+  display: grid;
+  gap: 12px;
+  padding: 0 16px 16px;
+}
+
 .captura-config-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -405,6 +456,75 @@ body.captura-body ::selection {
   border-radius: var(--captura-radius-sm);
   background: var(--captura-surface-soft);
   border: 1px solid var(--captura-border-soft);
+}
+
+.captura-toggle-row-compact {
+  padding: 10px 12px;
+}
+
+.captura-field-label-subtle {
+  font-size: 0.82rem;
+  color: var(--captura-text-muted);
+}
+
+.captura-live-output-field .capturatranscript-textarea {
+  min-height: 8rem;
+}
+
+.captura-fieldset-reset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.captura-live-toggle-panel {
+  display: block;
+}
+
+.captura-inline-radio-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 0 2px;
+}
+
+.captura-inline-radio-label {
+  margin: 0 4px 0 0;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--captura-text-soft);
+  text-transform: uppercase;
+}
+
+.captura-inline-radio-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid rgba(210, 210, 215, 0.82);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--captura-text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.captura-inline-radio-option:has(input:checked) {
+  border-color: rgba(0, 102, 204, 0.24);
+  background: rgba(0, 102, 204, 0.08);
+  color: var(--captura-accent);
+}
+
+.captura-inline-radio-option input[type="radio"] {
+  width: 0.85rem;
+  height: 0.85rem;
+  margin: 0;
+  accent-color: var(--captura-accent);
 }
 
 .captura-slider-block {
@@ -486,6 +606,7 @@ body.captura-body ::selection {
 
 .captura-secondary-actions .btn,
 #openai-api-key-toggle,
+#assemblyai-api-key-toggle,
 .captura-refresh-pill,
 .captura-icon-button,
 .captura-engine-secondary {
@@ -551,6 +672,7 @@ body.captura-body ::selection {
 
 .captura-secondary-actions .btn:hover,
 #openai-api-key-toggle:hover,
+#assemblyai-api-key-toggle:hover,
 .captura-refresh-pill:hover,
 .captura-engine-secondary:hover,
 .captura-record-button:hover,
@@ -571,6 +693,10 @@ body.captura-body ::selection {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+
+.captura-engine-key-grid {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .captura-library-panel {
@@ -1001,7 +1127,8 @@ body.captura-body ::selection {
 .captura-engine-secondary:focus,
 .captura-refresh-pill:focus,
 .captura-glass-button:focus,
-#openai-api-key-toggle:focus {
+#openai-api-key-toggle:focus,
+#assemblyai-api-key-toggle:focus {
   border-color: rgba(0, 102, 204, 0.55);
   box-shadow: 0 0 0 0.22rem rgba(0, 102, 204, 0.14);
   outline: none;

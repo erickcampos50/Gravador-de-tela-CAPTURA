@@ -13,6 +13,14 @@ function getBaseName(fileName) {
   return fileName.replace(/\.[^.]+$/, '');
 }
 
+function getTranscriptStem(mediaFileName, { variant = 'final', suffix = '' } = {}) {
+  const baseName = getBaseName(mediaFileName);
+  if (variant === 'live') return `${baseName}-transcript-live`;
+  return suffix
+    ? `${baseName}-transcript-${suffix}`
+    : `${baseName}-transcript`;
+}
+
 function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -100,12 +108,7 @@ export class MediaLibrary {
     const trimmed = transcriptText.trim();
     if (!trimmed) throw new Error('A transcrição está vazia.');
 
-    const baseName = getBaseName(mediaFileName);
-    const transcriptStem = variant === 'live'
-      ? `${baseName}-transcript-live`
-      : suffix
-        ? `${baseName}-transcript-${suffix}`
-        : `${baseName}-transcript`;
+    const transcriptStem = getTranscriptStem(mediaFileName, { variant, suffix });
     const entries = await this.#storage.listDirectoryFileHandles();
     const transcriptVersionPattern = new RegExp(`^${escapeRegExp(transcriptStem)}-\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}\\.txt$`);
     const hasStem = entries.some(entry =>
@@ -116,6 +119,15 @@ export class MediaLibrary {
       ? `${transcriptStem}.txt`
       : `${transcriptStem}-${dateStamp()}.txt`;
 
+    const handle = await this.#storage.writeTextFile(fileName, `${trimmed}\n`);
+    return { fileName, handle };
+  }
+
+  async writeTranscriptIncremental(mediaFileName, transcriptText, { variant = 'live', suffix = '' } = {}) {
+    const trimmed = transcriptText.trim();
+    if (!trimmed) throw new Error('A transcrição está vazia.');
+
+    const fileName = `${getTranscriptStem(mediaFileName, { variant, suffix })}.txt`;
     const handle = await this.#storage.writeTextFile(fileName, `${trimmed}\n`);
     return { fileName, handle };
   }

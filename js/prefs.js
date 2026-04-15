@@ -13,10 +13,13 @@ export const PREFS = {
   micGain:  'captura-micGain',
   sysGain:  'captura-sysGain',
   liveTranscriptionEnabled: 'captura-liveTranscriptionEnabled',
+  transcriptionEngine:      'captura-transcriptionEngine',
   transcriptionPrompt:      'captura-transcriptionPrompt',
   transcriptionMode:        'captura-transcriptionMode',
+  postProcessModel:         'captura-postProcessModel',
   postProcessPrompt:        'captura-postProcessPrompt',
   openAiPanelOpen:          'captura-openAiPanelOpen',
+  assemblyAiPanelOpen:      'captura-assemblyAiPanelOpen',
   transcriptionPanelOpen:   'captura-transcriptionPanelOpen',
 };
 

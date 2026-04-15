@@ -1,16 +1,36 @@
-const TRANSCRIPTIONS_ENDPOINT = 'https://api.openai.com/v1/audio/transcriptions';
-const RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses';
-const TRANSCRIPTION_MODELS = [
+const OPENAI_TRANSCRIPTIONS_ENDPOINT = 'https://api.openai.com/v1/audio/transcriptions';
+const OPENAI_RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses';
+const ASSEMBLYAI_BASE_URL = 'https://api.assemblyai.com';
+
+const OPENAI_TRANSCRIPTION_MODELS = [
   'gpt-4o-transcribe',
   'gpt-4o-mini-transcribe',
   'whisper-1',
 ];
-const DEFAULT_TRANSCRIPTION_MODEL = TRANSCRIPTION_MODELS[0];
-const DEFAULT_POSTPROCESS_MODEL = 'gpt-5.4-mini';
+const DEFAULT_OPENAI_TRANSCRIPTION_MODEL = OPENAI_TRANSCRIPTION_MODELS[0];
+
+export const TRANSCRIPTION_ENGINES = {
+  assemblyai: 'assemblyai',
+  openai: 'openai',
+};
+
+export const TRANSCRIPTION_ENGINE_LABELS = {
+  [TRANSCRIPTION_ENGINES.assemblyai]: 'AssemblyAI',
+  [TRANSCRIPTION_ENGINES.openai]: 'OpenAI',
+};
+
+export const POSTPROCESS_MODELS = [
+  'gpt-5.4-mini',
+  'gpt-5.4',
+];
+
+export const DEFAULT_POSTPROCESS_MODEL = POSTPROCESS_MODELS[0];
 const DEFAULT_POSTPROCESS_PROMPT = 'Reescreva a transcrição em português do Brasil, com clareza, boa fluidez e preservando o sentido original. Retorne apenas o texto final.';
-const TRANSCRIPTION_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
-const TRANSCRIPTION_RETRYABLE_STATUS = new Set([401, 403, 404]);
-const TRANSCRIPTION_RETRYABLE_MESSAGE_RE = /(model|access|permission|available|not found|does not exist|unsupported)/i;
+const OPENAI_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+const ASSEMBLYAI_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
+const ASSEMBLYAI_POLL_INTERVAL_MS = 3_000;
+const OPENAI_RETRYABLE_STATUS = new Set([401, 403, 404]);
+const OPENAI_RETRYABLE_MESSAGE_RE = /(model|access|permission|available|not found|does not exist|unsupported)/i;
 
 export const TRANSCRIPTION_OUTPUT_MODES = {
   plain: 'plain',
@@ -38,6 +58,35 @@ class OpenAIRequestError extends Error {
     this.model = model;
     this.requestId = requestId;
     if (cause) this.cause = cause;
+  }
+}
+
+export class TranscriptionConfigError extends Error {
+  constructor(message, { name = 'TranscriptionConfigError', title = 'Configuração obrigatória', engine = '' } = {}) {
+    super(message);
+    this.name = name;
+    this.title = title;
+    this.engine = engine;
+  }
+}
+
+export class OpenAIConfigError extends TranscriptionConfigError {
+  constructor(message) {
+    super(message, {
+      name: 'OpenAIConfigError',
+      title: 'Chave da API da OpenAI obrigatória',
+      engine: TRANSCRIPTION_ENGINES.openai,
+    });
+  }
+}
+
+export class AssemblyAIConfigError extends TranscriptionConfigError {
+  constructor(message) {
+    super(message, {
+      name: 'AssemblyAIConfigError',
+      title: 'Chave da API da AssemblyAI obrigatória',
+      engine: TRANSCRIPTION_ENGINES.assemblyai,
+    });
   }
 }
 
@@ -71,47 +120,6 @@ function createRequestSignal(signal, timeoutMs) {
       if (signal) signal.removeEventListener('abort', forwardAbort);
     },
   };
-}
-
-export class OpenAIConfigError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'OpenAIConfigError';
-    this.title = 'Chave da API da OpenAI obrigatória';
-  }
-}
-
-async function parseErrorMessage(response) {
-  const contentType = response.headers.get('content-type') || '';
-  const requestId = response.headers.get('x-request-id') || response.headers.get('openai-request-id') || '';
-  if (contentType.includes('application/json')) {
-    try {
-      const data = await response.json();
-      const message = data?.error?.message || data?.message || `A requisição para a OpenAI falhou com status ${response.status}.`;
-      return requestId ? `${message} (request id: ${requestId})` : message;
-    } catch (_) {
-      // Ignore JSON parse failures and fall back to a generic message.
-    }
-  }
-
-  const text = await response.text().catch(() => '');
-  const message = text || `A requisição para a OpenAI falhou com status ${response.status}.`;
-  return requestId ? `${message} (request id: ${requestId})` : message;
-}
-
-async function readErrorResponse(response, model) {
-  return new OpenAIRequestError(await parseErrorMessage(response), {
-    status: response.status,
-    model,
-    requestId: response.headers.get('x-request-id') || response.headers.get('openai-request-id') || '',
-  });
-}
-
-function shouldRetryTranscriptionError(error, model, models) {
-  if (!(error instanceof OpenAIRequestError)) return false;
-  if (!TRANSCRIPTION_RETRYABLE_STATUS.has(error.status)) return false;
-  if (!TRANSCRIPTION_RETRYABLE_MESSAGE_RE.test(error.message)) return false;
-  return model !== models[models.length - 1];
 }
 
 function isLikelyBrowserFetchError(error) {
@@ -166,8 +174,90 @@ function normalizeTranscriptionSegments(data) {
     .sort((a, b) => a.start - b.start || a.end - b.end || a.text.localeCompare(b.text, undefined, { sensitivity: 'base' }));
 }
 
+async function parseOpenAiErrorMessage(response) {
+  const contentType = response.headers.get('content-type') || '';
+  const requestId = response.headers.get('x-request-id') || response.headers.get('openai-request-id') || '';
+  if (contentType.includes('application/json')) {
+    try {
+      const data = await response.json();
+      const message = data?.error?.message || data?.message || `A requisição para a OpenAI falhou com status ${response.status}.`;
+      return requestId ? `${message} (request id: ${requestId})` : message;
+    } catch (_) {
+      // Ignore JSON parse failures and fall back to a generic message.
+    }
+  }
+
+  const text = await response.text().catch(() => '');
+  const message = text || `A requisição para a OpenAI falhou com status ${response.status}.`;
+  return requestId ? `${message} (request id: ${requestId})` : message;
+}
+
+async function readOpenAiErrorResponse(response, model) {
+  return new OpenAIRequestError(await parseOpenAiErrorMessage(response), {
+    status: response.status,
+    model,
+    requestId: response.headers.get('x-request-id') || response.headers.get('openai-request-id') || '',
+  });
+}
+
+function shouldRetryTranscriptionError(error, model, models) {
+  if (!(error instanceof OpenAIRequestError)) return false;
+  if (!OPENAI_RETRYABLE_STATUS.has(error.status)) return false;
+  if (!OPENAI_RETRYABLE_MESSAGE_RE.test(error.message)) return false;
+  return model !== models[models.length - 1];
+}
+
+async function parseAssemblyAiErrorMessage(response) {
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    try {
+      const data = await response.json();
+      return data?.error || data?.message || `A requisição para a AssemblyAI falhou com status ${response.status}.`;
+    } catch (_) {
+      // Ignore JSON parse failures and fall back to a generic message.
+    }
+  }
+
+  const text = await response.text().catch(() => '');
+  return text || `A requisição para a AssemblyAI falhou com status ${response.status}.`;
+}
+
+function delay(ms, signal) {
+  return new Promise((resolve, reject) => {
+    const timeoutId = globalThis.setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+
+    const onAbort = () => {
+      cleanup();
+      reject(new DOMException('A operação foi cancelada.', 'AbortError'));
+    };
+
+    const cleanup = () => {
+      globalThis.clearTimeout(timeoutId);
+      signal?.removeEventListener('abort', onAbort);
+    };
+
+    if (signal) {
+      if (signal.aborted) {
+        cleanup();
+        reject(new DOMException('A operação foi cancelada.', 'AbortError'));
+        return;
+      }
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+  });
+}
+
 export class OpenAIClientManager {
   #apiKeyInput;
+
+  engine = TRANSCRIPTION_ENGINES.openai;
+  supportsPrompt = true;
+  supportsStructuredTranscription = true;
+  supportsPostProcess = true;
+  supportedModes = new Set(Object.values(TRANSCRIPTION_OUTPUT_MODES));
 
   constructor(apiKeyInput) {
     this.#apiKeyInput = apiKeyInput;
@@ -191,21 +281,21 @@ export class OpenAIClientManager {
       throw new Error('Nenhum arquivo de áudio foi enviado para transcrição.');
     }
 
-    const models = [...new Set([model || DEFAULT_TRANSCRIPTION_MODEL, ...TRANSCRIPTION_MODELS])];
+    const models = [...new Set([model || DEFAULT_OPENAI_TRANSCRIPTION_MODEL, ...OPENAI_TRANSCRIPTION_MODELS])];
     let lastError = null;
 
-    for (const model of models) {
+    for (const candidateModel of models) {
       try {
         return await this.#transcribeFileOnce({
           apiKey,
           file,
           prompt,
           signal,
-          model,
+          model: candidateModel,
         });
       } catch (error) {
         lastError = error;
-        if (!shouldRetryTranscriptionError(error, model, models)) {
+        if (!shouldRetryTranscriptionError(error, candidateModel, models)) {
           throw error;
         }
       }
@@ -253,10 +343,10 @@ export class OpenAIClientManager {
     formData.append('model', model);
     if (prompt.trim()) formData.append('prompt', prompt.trim());
 
-    const { signal: requestSignal, timedOut, cleanup } = createRequestSignal(signal, TRANSCRIPTION_REQUEST_TIMEOUT_MS);
+    const { signal: requestSignal, timedOut, cleanup } = createRequestSignal(signal, OPENAI_REQUEST_TIMEOUT_MS);
 
     try {
-      const response = await fetch(TRANSCRIPTIONS_ENDPOINT, {
+      const response = await fetch(OPENAI_TRANSCRIPTIONS_ENDPOINT, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -266,7 +356,7 @@ export class OpenAIClientManager {
       });
 
       if (!response.ok) {
-        throw await readErrorResponse(response, model);
+        throw await readOpenAiErrorResponse(response, model);
       }
 
       const contentType = response.headers.get('content-type') || '';
@@ -278,7 +368,7 @@ export class OpenAIClientManager {
       return (await response.text()).trim();
     } catch (error) {
       if (timedOut()) {
-        throw new Error(`A transcrição com ${model} excedeu o tempo limite de ${formatTimeoutLabel(TRANSCRIPTION_REQUEST_TIMEOUT_MS)}.`);
+        throw new Error(`A transcrição com ${model} excedeu o tempo limite de ${formatTimeoutLabel(OPENAI_REQUEST_TIMEOUT_MS)}.`);
       }
 
       if (isLikelyBrowserFetchError(error)) {
@@ -312,10 +402,10 @@ export class OpenAIClientManager {
     timestampGranularities.forEach(value => formData.append('timestamp_granularities[]', value));
     if (chunkingStrategy) formData.append('chunking_strategy', chunkingStrategy);
 
-    const { signal: requestSignal, timedOut, cleanup } = createRequestSignal(signal, TRANSCRIPTION_REQUEST_TIMEOUT_MS);
+    const { signal: requestSignal, timedOut, cleanup } = createRequestSignal(signal, OPENAI_REQUEST_TIMEOUT_MS);
 
     try {
-      const response = await fetch(TRANSCRIPTIONS_ENDPOINT, {
+      const response = await fetch(OPENAI_TRANSCRIPTIONS_ENDPOINT, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -325,7 +415,7 @@ export class OpenAIClientManager {
       });
 
       if (!response.ok) {
-        throw await readErrorResponse(response, model);
+        throw await readOpenAiErrorResponse(response, model);
       }
 
       const contentType = response.headers.get('content-type') || '';
@@ -347,7 +437,7 @@ export class OpenAIClientManager {
       };
     } catch (error) {
       if (timedOut()) {
-        throw new Error(`A transcrição com ${model} excedeu o tempo limite de ${formatTimeoutLabel(TRANSCRIPTION_REQUEST_TIMEOUT_MS)}.`);
+        throw new Error(`A transcrição com ${model} excedeu o tempo limite de ${formatTimeoutLabel(OPENAI_REQUEST_TIMEOUT_MS)}.`);
       }
 
       if (isLikelyBrowserFetchError(error)) {
@@ -363,21 +453,21 @@ export class OpenAIClientManager {
     }
   }
 
-  async postProcessText({ text, prompt = '', signal } = {}) {
+  async postProcessText({ text, prompt = '', signal, model = DEFAULT_POSTPROCESS_MODEL } = {}) {
     const apiKey = this.assertConfigured();
     const transcriptText = text?.trim() || '';
     if (!transcriptText) {
       throw new Error('Não há texto de transcrição disponível para pós-processamento.');
     }
 
-    const response = await fetch(RESPONSES_ENDPOINT, {
+    const response = await fetch(OPENAI_RESPONSES_ENDPOINT, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: DEFAULT_POSTPROCESS_MODEL,
+        model,
         input: [
           {
             role: 'developer',
@@ -406,7 +496,7 @@ export class OpenAIClientManager {
     });
 
     if (!response.ok) {
-      throw new Error(await parseErrorMessage(response));
+      throw new Error(await parseOpenAiErrorMessage(response));
     }
 
     const data = await response.json();
@@ -416,5 +506,184 @@ export class OpenAIClientManager {
     }
 
     return outputText;
+  }
+}
+
+export class AssemblyAIClientManager {
+  #apiKeyInput;
+
+  engine = TRANSCRIPTION_ENGINES.assemblyai;
+  supportsPrompt = false;
+  supportsStructuredTranscription = true;
+  supportsPostProcess = false;
+  supportedModes = new Set([
+    TRANSCRIPTION_OUTPUT_MODES.plain,
+    TRANSCRIPTION_OUTPUT_MODES.diarized,
+  ]);
+
+  constructor(apiKeyInput) {
+    this.#apiKeyInput = apiKeyInput;
+  }
+
+  getApiKey() {
+    return this.#apiKeyInput?.value.trim() || '';
+  }
+
+  assertConfigured() {
+    const apiKey = this.getApiKey();
+    if (!apiKey) {
+      throw new AssemblyAIConfigError('Preencha sua chave da API da AssemblyAI antes de usar este motor de transcrição.');
+    }
+    return apiKey;
+  }
+
+  async transcribeFile({ file, signal } = {}) {
+    if (!(file instanceof File)) {
+      throw new Error('Nenhum arquivo de áudio foi enviado para transcrição.');
+    }
+
+    const result = await this.#runTranscription({ file, signal, speakerLabels: false });
+    return typeof result?.text === 'string' ? result.text.trim() : '';
+  }
+
+  async transcribeFileDetailed({ file, signal, mode = TRANSCRIPTION_OUTPUT_MODES.diarized } = {}) {
+    if (!(file instanceof File)) {
+      throw new Error('Nenhum arquivo de áudio foi enviado para transcrição.');
+    }
+    if (mode !== TRANSCRIPTION_OUTPUT_MODES.diarized) {
+      throw new Error(`Modo de transcrição estruturada inválido para AssemblyAI: ${mode}.`);
+    }
+
+    const result = await this.#runTranscription({ file, signal, speakerLabels: true });
+    const utterances = Array.isArray(result?.utterances) ? result.utterances : [];
+    const segments = utterances
+      .map((utterance, index) => {
+        const text = typeof utterance?.text === 'string' ? utterance.text.trim() : '';
+        if (!text) return null;
+
+        const start = Number(utterance?.start);
+        const end = Number(utterance?.end);
+        const speaker = typeof utterance?.speaker === 'string' && utterance.speaker.trim()
+          ? `Speaker ${utterance.speaker.trim()}`
+          : '';
+
+        return {
+          id: `utterance-${index + 1}`,
+          start: Number.isFinite(start) ? start / 1000 : 0,
+          end: Number.isFinite(end) ? end / 1000 : 0,
+          text,
+          speaker,
+        };
+      })
+      .filter(Boolean);
+
+    return {
+      text: typeof result?.text === 'string' ? result.text.trim() : '',
+      raw: result,
+      segments,
+      model: 'assemblyai-speaker-diarization',
+    };
+  }
+
+  async #runTranscription({ file, signal, speakerLabels = false } = {}) {
+    const apiKey = this.assertConfigured();
+    const { signal: requestSignal, timedOut, cleanup } = createRequestSignal(signal, ASSEMBLYAI_REQUEST_TIMEOUT_MS);
+
+    try {
+      const audioUrl = await this.#uploadFile(file, apiKey, requestSignal);
+      const transcriptId = await this.#createTranscript(audioUrl, apiKey, requestSignal, { speakerLabels });
+      if (!transcriptId) {
+        throw new Error('A AssemblyAI não retornou um identificador de transcrição.');
+      }
+
+      while (true) {
+        const pollingData = await this.#pollTranscript(transcriptId, apiKey, requestSignal);
+        if (pollingData?.status === 'completed') {
+          return pollingData;
+        }
+        if (pollingData?.status === 'error') {
+          throw new Error(`A AssemblyAI falhou ao transcrever: ${pollingData?.error || 'erro desconhecido.'}`);
+        }
+        await delay(ASSEMBLYAI_POLL_INTERVAL_MS, requestSignal);
+      }
+    } catch (error) {
+      if (timedOut()) {
+        throw new Error(`A transcrição com a AssemblyAI excedeu o tempo limite de ${formatTimeoutLabel(ASSEMBLYAI_REQUEST_TIMEOUT_MS)}.`);
+      }
+
+      if (isLikelyBrowserFetchError(error)) {
+        throw new Error(
+          'Não foi possível conectar à AssemblyAI. ' +
+          'Verifique a chave, a conexão e se o navegador permite essa requisição a partir da origem local.'
+        );
+      }
+
+      throw error;
+    } finally {
+      cleanup();
+    }
+  }
+
+  async #uploadFile(file, apiKey, signal) {
+    const uploadResponse = await fetch(`${ASSEMBLYAI_BASE_URL}/v2/upload`, {
+      method: 'POST',
+      headers: {
+        authorization: apiKey,
+      },
+      body: file,
+      signal,
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error(await parseAssemblyAiErrorMessage(uploadResponse));
+    }
+
+    const uploadData = await uploadResponse.json();
+    const audioUrl = typeof uploadData?.upload_url === 'string' ? uploadData.upload_url : '';
+    if (!audioUrl) {
+      throw new Error('A AssemblyAI não retornou uma URL de upload válida.');
+    }
+
+    return audioUrl;
+  }
+
+  async #createTranscript(audioUrl, apiKey, signal, { speakerLabels = false } = {}) {
+    const transcriptResponse = await fetch(`${ASSEMBLYAI_BASE_URL}/v2/transcript`, {
+      method: 'POST',
+      headers: {
+        authorization: apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        audio_url: audioUrl,
+        language_detection: true,
+        speech_models: ['universal-3-pro', 'universal-2'],
+        ...(speakerLabels ? { speaker_labels: true } : {}),
+      }),
+      signal,
+    });
+
+    if (!transcriptResponse.ok) {
+      throw new Error(await parseAssemblyAiErrorMessage(transcriptResponse));
+    }
+
+    const transcriptData = await transcriptResponse.json();
+    return typeof transcriptData?.id === 'string' ? transcriptData.id : '';
+  }
+
+  async #pollTranscript(transcriptId, apiKey, signal) {
+    const pollingResponse = await fetch(`${ASSEMBLYAI_BASE_URL}/v2/transcript/${transcriptId}`, {
+      method: 'GET',
+      headers: {
+        authorization: apiKey,
+      },
+      signal,
+    });
+
+    if (!pollingResponse.ok) {
+      throw new Error(await parseAssemblyAiErrorMessage(pollingResponse));
+    }
+
+    return pollingResponse.json();
   }
 }

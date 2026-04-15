@@ -11,7 +11,7 @@ O projeto foi inspirado no excelente [Captura Web Recorder](https://mathewsachin
 - Lista os arquivos de áudio e vídeo da pasta selecionada.
 - Permite reproduzir o arquivo selecionado e visualizar suas transcrições relacionadas.
 - Gera transcrição do arquivo selecionado.
-- Gera transcrição com timestamps por segmento ou diarização com speaker labels em texto legível.
+- Gera transcrição com timestamps por segmento ou diarização com rótulos dos participantes em texto legível.
 - Gera transcrição em tempo real durante a gravação.
 - Salva o transcript ao vivo e a transcrição final ao lado do arquivo original.
 - Permite copiar ou salvar o resultado reformulado da transcrição.
