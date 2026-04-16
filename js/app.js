@@ -542,6 +542,83 @@ function clearTranscriptViewer(message = 'A transcrição selecionada será exib
   transcriptViewerEl.placeholder = message;
 }
 
+function getMediaEventEmptyText() {
+  return 'Clique para registrar informação complementar';
+}
+
+function renderMediaEventField(fieldEl, entry) {
+  const description = entry.eventDescription?.trim() || '';
+  fieldEl.classList.toggle('is-empty', !description);
+  fieldEl.classList.remove('is-editing');
+  fieldEl.contentEditable = 'false';
+  fieldEl.textContent = description || getMediaEventEmptyText();
+  fieldEl.title = description || 'Clique para registrar a informação complementar deste arquivo.';
+}
+
+function beginMediaEventEdit(fieldEl, entry) {
+  if (fieldEl.classList.contains('is-editing')) return;
+
+  fieldEl.classList.add('is-editing');
+  fieldEl.contentEditable = 'true';
+  fieldEl.textContent = entry.eventDescription?.trim() || '';
+  fieldEl.focus();
+
+  const selection = window.getSelection?.();
+  if (selection) {
+    const range = document.createRange();
+    range.selectNodeContents(fieldEl);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+}
+
+async function saveMediaEventEdit(fieldEl, entry) {
+  if (!entry?.name) return;
+
+  const nextValue = fieldEl.textContent.trim();
+  const previousValue = entry.eventDescription?.trim() || '';
+  fieldEl.classList.remove('is-editing');
+  fieldEl.contentEditable = 'false';
+
+  if (nextValue === previousValue) {
+    renderMediaEventField(fieldEl, entry);
+    return;
+  }
+
+  try {
+    const dirOk = await storage.ensureAccess({
+      mode: 'readwrite',
+      silent: false,
+      requestIfNeeded: true,
+    });
+    if (!dirOk) {
+      renderMediaEventField(fieldEl, entry);
+      return;
+    }
+
+    const result = await mediaLibrary.writeMediaEventInfo(entry.name, nextValue);
+    entry.eventDescription = nextValue;
+    const libraryEntry = libraryEntries.find(item => item.name === entry.name);
+    if (libraryEntry) libraryEntry.eventDescription = nextValue;
+    renderMediaFileList();
+    showToast(
+      nextValue
+        ? `Informação complementar salva em ${result.fileName}.`
+        : `Informação complementar removida de ${result.fileName}.`,
+      'success'
+    );
+  } catch (error) {
+    renderMediaEventField(fieldEl, entry);
+    handleTranscriptionError(error, {
+      toast: true,
+      dialog: false,
+      updateTranscriptPane: false,
+      updateLivePane: false,
+    });
+  }
+}
+
 function getSelectedTranscriptCacheKey(mediaName = selectedMediaEntry?.name || '', transcriptName = transcriptVersionSel.value) {
   if (!mediaName || !transcriptName) return '';
   return `${mediaName}::${transcriptName}`;
@@ -569,7 +646,7 @@ function syncPostProcessOutput() {
   );
 }
 
-function clearSelectedMediaState(message = 'Selecione um arquivo da pasta escolhida para visualizar e inspecionar a transcrição.') {
+function clearSelectedMediaState(message = 'Selecione um arquivo da pasta escolhida para visualizar e inspecionar a transcrição e a informação complementar.') {
   selectedMediaEntry = null;
   selectedTranscriptEntries = [];
   resetMediaPreview();
@@ -594,10 +671,11 @@ function buildMediaListItem(entry) {
   const article = document.createElement('article');
   article.className = 'captura-library-entry';
 
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'captura-library-item';
-  button.dataset.name = entry.name;
+  const item = document.createElement('div');
+  item.className = 'captura-library-item';
+  item.dataset.name = entry.name;
+  item.setAttribute('role', 'button');
+  item.tabIndex = 0;
 
   const shell = document.createElement('div');
   shell.className = 'captura-library-item-shell';
@@ -625,6 +703,9 @@ function buildMediaListItem(entry) {
   const bottom = document.createElement('div');
   bottom.className = 'captura-library-meta';
 
+  const metaRow = document.createElement('div');
+  metaRow.className = 'captura-library-meta-row';
+
   const dateLabel = document.createElement('span');
   dateLabel.textContent = entry.lastModified
     ? LIBRARY_DATE_FORMATTER.format(entry.lastModified)
@@ -639,16 +720,76 @@ function buildMediaListItem(entry) {
     ? `${entry.transcriptCount} transcri${entry.transcriptCount === 1 ? 'ção' : 'ções'}`
     : 'Sem transcrição';
 
+  metaRow.append(
+    dateLabel,
+    document.createTextNode(' • '),
+    sizeLabel,
+    document.createTextNode(' • '),
+    transcriptLabel
+  );
+
+  const detailRow = document.createElement('div');
+  detailRow.className = 'captura-library-meta-row captura-library-meta-row-secondary';
+
+  const eventLabel = document.createElement('small');
+  eventLabel.className = 'captura-library-event';
+  eventLabel.tabIndex = 0;
+  eventLabel.dataset.mediaName = entry.name;
+  eventLabel.dataset.originalValue = entry.eventDescription || '';
+  renderMediaEventField(eventLabel, entry);
+  eventLabel.addEventListener('click', event => {
+    event.stopPropagation();
+    if (!eventLabel.classList.contains('is-editing')) {
+      beginMediaEventEdit(eventLabel, entry);
+    }
+  });
+  eventLabel.addEventListener('keydown', event => {
+    if (eventLabel.classList.contains('is-editing')) {
+      event.stopPropagation();
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        void saveMediaEventEdit(eventLabel, entry);
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        renderMediaEventField(eventLabel, entry);
+      }
+      return;
+    }
+
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      event.stopPropagation();
+      beginMediaEventEdit(eventLabel, entry);
+    }
+  });
+  eventLabel.addEventListener('blur', () => {
+    if (eventLabel.classList.contains('is-editing')) {
+      void saveMediaEventEdit(eventLabel, entry);
+    }
+  });
+  item.addEventListener('click', () => {
+    if (item.classList.contains('is-disabled')) return;
+    void selectMediaEntryByName(entry.name);
+  });
+  item.addEventListener('keydown', event => {
+    if (item.classList.contains('is-disabled')) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      void selectMediaEntryByName(entry.name);
+    }
+  });
+
   const chevron = document.createElement('span');
   chevron.className = 'captura-library-chevron';
   chevron.innerHTML = `<i class="fas fa-chevron-${selectedMediaEntry?.name === entry.name ? 'up' : 'down'}"></i>`;
 
-  bottom.append(dateLabel, document.createTextNode(' • '), sizeLabel);
-  body.append(top, bottom, transcriptLabel);
+  detailRow.append(eventLabel);
+  bottom.append(metaRow, detailRow);
+  body.append(top, bottom);
   shell.append(iconBox, body);
-  button.append(shell, chevron);
-  article.append(button);
-  return { article, button };
+  item.append(shell, chevron);
+  article.append(item);
+  return { article, item };
 }
 
 function renderMediaFileList() {
@@ -665,12 +806,12 @@ function renderMediaFileList() {
   }
 
   libraryEntries.forEach(entry => {
-    const { article, button: item } = buildMediaListItem(entry);
-    item.disabled = transcriptionBusy || postProcessingBusy;
+    const { article, item } = buildMediaListItem(entry);
+    const isDisabled = transcriptionBusy || postProcessingBusy;
+    item.classList.toggle('is-disabled', isDisabled);
+    item.setAttribute('aria-disabled', String(isDisabled));
+    item.tabIndex = isDisabled ? -1 : 0;
     if (selectedMediaEntry?.name === entry.name) item.classList.add('active');
-    item.addEventListener('click', () => {
-      void selectMediaEntryByName(entry.name);
-    });
     if (selectedMediaEntry?.name === entry.name) {
       article.classList.add('is-active');
       mediaDetailPanelEl.hidden = false;

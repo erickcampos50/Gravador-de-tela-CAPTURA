@@ -9,6 +9,7 @@ O projeto foi inspirado no excelente [Captura Web Recorder](https://mathewsachin
 - Mistura áudio do sistema e microfone com controle de ganho.
 - Salva gravações diretamente na pasta escolhida pelo usuário.
 - Lista os arquivos de áudio e vídeo da pasta selecionada.
+- Permite registrar uma informação complementar do evento que originou cada gravação.
 - Permite reproduzir o arquivo selecionado e visualizar suas transcrições relacionadas.
 - Gera transcrição do arquivo selecionado.
 - Gera transcrição com timestamps por segmento ou diarização com rótulos dos participantes em texto legível.
@@ -99,6 +100,7 @@ Para um arquivo `recording-2026-04-10T10-00-00.webm`, os arquivos de transcript 
 - `recording-2026-04-10T10-00-00-transcript-2026-04-10T10-15-00.txt`
 - `recording-2026-04-10T10-00-00-transcript-live-2026-04-10T10-15-00.txt`
 - `recording-2026-04-10T10-00-00-transcript-reformulado-2026-04-10T10-15-00.txt`
+- `recording-2026-04-10T10-00-00-metadata.json`
 
 Regras:
 
@@ -106,6 +108,7 @@ Regras:
 - timestamps e diarização usam sufixos descritivos antes da versão timestampada;
 - o live transcript usa `-transcript-live.txt`;
 - o resultado reformulado usa `-transcript-reformulado.txt`;
+- a informação complementar do evento usa `-metadata.json`;
 - novas versões recebem timestamp;
 - todos os arquivos ficam na mesma pasta do original.
 

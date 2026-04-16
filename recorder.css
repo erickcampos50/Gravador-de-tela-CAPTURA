@@ -818,6 +818,7 @@ body.captura-body ::selection {
   justify-content: space-between;
   gap: 14px;
   padding: 14px 16px;
+  cursor: pointer;
   transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background-color 160ms ease;
 }
 
@@ -829,6 +830,14 @@ body.captura-body ::selection {
   transform: translateY(-1px);
 }
 
+.captura-library-item:focus-visible {
+  outline: none;
+  border-color: rgba(0, 102, 204, 0.30);
+  background: linear-gradient(180deg, #FFFFFF 0%, #FBFBFD 100%);
+  box-shadow: 0 0 0 0.18rem rgba(0, 102, 204, 0.10), var(--captura-shadow-soft);
+  transform: translateY(-1px);
+}
+
 .captura-library-entry.is-active .captura-library-item {
   border: none;
   border-radius: 20px 20px 0 0;
@@ -836,8 +845,10 @@ body.captura-body ::selection {
   box-shadow: none;
 }
 
-.captura-library-item:disabled {
+.captura-library-item.is-disabled {
   opacity: 0.6;
+  cursor: default;
+  pointer-events: none;
 }
 
 .captura-library-item-shell {
@@ -912,6 +923,72 @@ body.captura-body ::selection {
   display: block;
   margin-top: 0.3rem;
   font-size: 0.78rem;
+}
+
+.captura-library-meta-row .captura-library-transcripts {
+  display: inline-flex;
+  margin-top: 0;
+  flex: 0 0 auto;
+}
+
+.captura-library-event {
+  display: block;
+  min-width: 0;
+  flex: 1 1 60ch;
+  width: min(100%, 60ch);
+  padding: 0.26rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  color: var(--captura-text-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  cursor: text;
+  outline: none;
+  user-select: text;
+}
+
+.captura-library-event:focus-visible {
+  border-color: rgba(0, 102, 204, 0.30);
+  background: rgba(0, 102, 204, 0.04);
+  box-shadow: 0 0 0 0.18rem rgba(0, 102, 204, 0.10);
+}
+
+.captura-library-event::before {
+  content: 'Evento: ';
+  margin-right: 0.35rem;
+  color: var(--captura-text-soft);
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+
+.captura-library-event.is-empty {
+  color: var(--captura-text-soft);
+}
+
+.captura-library-event.is-editing {
+  border-color: rgba(0, 102, 204, 0.22);
+  background: rgba(0, 102, 204, 0.06);
+  color: var(--captura-text);
+  cursor: text;
+}
+
+.captura-library-event.is-editing::before {
+  content: 'Editar: ';
+}
+
+.captura-library-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.captura-library-meta-row-secondary {
+  margin-top: 0.3rem;
+  align-items: flex-start;
 }
 
 .captura-library-empty {

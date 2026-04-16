@@ -157,6 +157,11 @@ export class StorageManager {
     return fileHandle;
   }
 
+  async deleteFile(fileName) {
+    if (!this.#dirHandle) throw new Error('Nenhuma pasta selecionada.');
+    await this.#dirHandle.removeEntry(fileName);
+  }
+
   // ── Private helpers ──────────────────────────────────────────────────────────
 
   #updateDirUI() {
